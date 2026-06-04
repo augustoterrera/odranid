@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -13,7 +14,7 @@ from pydantic_ai.models import Model
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
-from ..agent import AgentError, build_system_prompt, canonical_product_link, clamp_int, compact_search_response
+from .catalog_helpers import AgentError, build_system_prompt, canonical_product_link, clamp_int, compact_search_response
 from ..coverage import calculate_coverage
 from ..models import (
     AgentMessage,
@@ -27,6 +28,8 @@ from ..models import (
 )
 
 SearchCallable = Callable[[SearchRequest], SearchResponse]
+logger = logging.getLogger(__name__)
+_LOGFIRE_CONFIGURED = False
 
 
 class OdranidAgentOutput(BaseModel):
@@ -75,6 +78,7 @@ def run_pydantic_agent(
     if prompt_file is None:
         prompt_file = Path("prompt_agente_odranid.md")
 
+    configure_logfire()
     deps = OdranidAgentDeps(search=search, default_limit=request.limit, max_limit=request.limit)
     agent = build_agent(
         model=pydantic_model or build_openai_model(model, api_key),
@@ -162,6 +166,26 @@ def build_agent(model: Model, system_prompt: str) -> Agent[OdranidAgentDeps, Odr
         return compact_search_response(response)
 
     return agent
+
+
+def configure_logfire() -> None:
+    global _LOGFIRE_CONFIGURED
+    if _LOGFIRE_CONFIGURED:
+        return
+    try:
+        import logfire
+
+        logfire.configure(
+            send_to_logfire="if-token-present",
+            service_name="odranid-catalog-service",
+            console=False,
+            config_dir=Path("/tmp/odranid-logfire"),
+            data_dir=Path("/tmp/odranid-logfire"),
+        )
+        logfire.instrument_pydantic_ai(include_content=True)
+        _LOGFIRE_CONFIGURED = True
+    except Exception as exc:  # pragma: no cover - instrumentation must never break chat.
+        logger.warning("logfire_setup_failed", extra={"error": str(exc)})
 
 
 def build_openai_model(model_name: str, api_key: str) -> OpenAIChatModel:

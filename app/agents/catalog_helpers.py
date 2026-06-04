@@ -1,10 +1,10 @@
-"""Shared agent helpers used by the Agno catalog agent and search tool."""
+"""Shared catalog formatting and agent helper functions."""
 from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
 
-from .models import AgentResponse, AgentToolTrace, SearchHit, SearchResponse
+from ..models import AgentResponse, AgentToolTrace, SearchHit, SearchResponse
 
 
 class AgentError(RuntimeError):

@@ -7,7 +7,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
 
-from .agent import AgentError
+from .agents.catalog_helpers import AgentError
 from .catalog_context import CatalogContextCache
 from .chat_memory import (
     ChatMemoryError,
@@ -232,11 +232,11 @@ def current_agent_context(request: AgentRequest) -> str:
 
 
 def get_product_intake(query: str, history: list[AgentMessage]) -> ProductIntakeResponse:
-    """Analyze product intake with the LLM RequirementsAgent (LLM-only pipeline)."""
+    """Analyze product intake through the single PydanticAI agent."""
     if not settings.openai_api_key:
         raise HTTPException(status_code=503, detail="OPENAI_API_KEY is required for intake analysis")
-    from .agents.requirements_agent import analyze_requirements
-    return analyze_requirements(query, history, str(settings.openai_api_key), settings.agent_model)
+    response = run_openai_agent(AgentRequest(message=query, history=history, limit=1))
+    return response.intake or ProductIntakeResponse()
 
 
 def build_search_query(intake: ProductIntakeResponse, request: AgentRequest) -> str:

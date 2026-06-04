@@ -1,14 +1,9 @@
 from __future__ import annotations
 
-import json
 import unittest
 
-from agno.models.response import ToolExecution
-
-from app.agent import compact_search_response, response_from_search_response
-from app.agents.catalog_agent import extract_tool_traces
-from app.models import AgentRequest, CoverageCalculation, ProductDocument, ProductSpecs, SearchHit, SearchRequest, SearchResponse
-from app.tools.buscar_productos import make_buscar_productos_tool
+from app.agents.catalog_helpers import compact_search_response, response_from_search_response
+from app.models import CoverageCalculation, ProductDocument, ProductSpecs, SearchHit, SearchResponse
 
 
 class AgentTests(unittest.TestCase):
@@ -62,40 +57,6 @@ class AgentTests(unittest.TestCase):
         compact = compact_search_response(response)
 
         self.assertEqual(compact["hits"][0]["product"]["link"], "https://odranid.com.ar/producto/piso-moneda/")
-
-    def test_buscar_productos_tool_uses_injected_search(self) -> None:
-        def fake_search(request: SearchRequest) -> SearchResponse:
-            self.assertEqual(request.query, "piso moneda")
-            self.assertEqual(request.limit, 3)
-            return SearchResponse(query=request.query, total_catalog_size=0, hits=[])
-
-        buscar_productos = make_buscar_productos_tool(fake_search, default_limit=5, max_limit=5)
-        payload = json.loads(buscar_productos.entrypoint(query="piso moneda", limit=3))
-
-        self.assertEqual(payload["query"], "piso moneda")
-
-    def test_buscar_productos_tool_caps_model_limit_to_request_limit(self) -> None:
-        def fake_search(request: SearchRequest) -> SearchResponse:
-            self.assertEqual(request.limit, 3)
-            return SearchResponse(query=request.query, total_catalog_size=0, hits=[])
-
-        buscar_productos = make_buscar_productos_tool(fake_search, default_limit=3, max_limit=3)
-        buscar_productos.entrypoint(query="piso moneda", limit=5)
-
-    def test_extract_tool_traces_counts_json_string_result_hits(self) -> None:
-        traces = extract_tool_traces(
-            [
-                ToolExecution(
-                    tool_name="buscar_productos",
-                    tool_args={"query": "piso moneda", "limit": 3},
-                    result=json.dumps({"hits": [{"product": {"title": "Piso"}}]}),
-                )
-            ]
-        )
-
-        self.assertEqual(traces[0].name, "buscar_productos")
-        self.assertEqual(traces[0].arguments["limit"], 3)
-        self.assertEqual(traces[0].result_count, 1)
 
     def test_response_from_search_response_formats_products_without_prices(self) -> None:
         response = SearchResponse(

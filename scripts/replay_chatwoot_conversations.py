@@ -14,7 +14,6 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from app.chat_memory import (  # noqa: E402
-    analyze_with_memory,
     apply_pending_slot_to_message,
     build_memory_state,
     history_from_state,
@@ -150,7 +149,7 @@ def main() -> None:
                 if api is None:
                     raise ReplayError("Chatwoot API client is required to fetch full conversation messages")
                 messages = api.get_messages(conversation_id)
-            turns = build_replay_turns(conversation_id, messages, args.mode, args.max_history)
+            turns = build_replay_turns(conversation_id, messages, args.mode, args.max_history, args.intake_only)
             if not args.quiet:
                 print(f"conversation={conversation_id} messages={len(messages)} turns={len(turns)}")
             for turn in turns:
@@ -191,6 +190,7 @@ def build_replay_turns(
     raw_messages: list[dict[str, Any]],
     mode: str,
     max_history: int,
+    intake_only: bool,
 ) -> list[ReplayTurn]:
     messages = sorted(raw_messages, key=message_sort_key)
     state: dict[str, Any] = {}
@@ -221,12 +221,9 @@ def build_replay_turns(
             elif mode == "last-incoming":
                 turns = [turn]
 
-            intake = analyze_with_memory(
-                content, history[-max_history:], state,
-                api_key=str(settings.openai_api_key) if settings.openai_api_key else None,
-                model=settings.agent_model,
-            )
-            state = build_memory_state(state, intake, pending_slot_from_intake(intake))
+            if not intake_only:
+                intake = analyze_turn_with_agent(content, history[-max_history:], state)
+                state = build_memory_state(state, intake, pending_slot_from_intake(intake))
 
         history.append(AgentMessage(role=role, content=content))
 
@@ -235,12 +232,8 @@ def build_replay_turns(
 
 def replay_turn(turn: ReplayTurn, intake_only: bool) -> dict[str, Any]:
     if intake_only:
-        intake = analyze_with_memory(
-            turn.user_message, turn.history, turn.state_before,
-            api_key=str(settings.openai_api_key) if settings.openai_api_key else None,
-            model=settings.agent_model,
-        )
-        state_after = build_memory_state(turn.state_before, intake, pending_slot_from_intake(intake))
+        intake = ProductIntakeResponse()
+        state_after = turn.state_before
     else:
         intake = ProductIntakeResponse()
         state_after = turn.state_before
@@ -277,6 +270,17 @@ def replay_turn(turn: ReplayTurn, intake_only: bool) -> dict[str, Any]:
     except Exception as exc:
         record["error"] = str(exc)
     return record
+
+
+def analyze_turn_with_agent(message: str, history: list[AgentMessage], state: dict[str, Any]) -> ProductIntakeResponse:
+    response = run_agent(
+        AgentRequest(
+            message=apply_pending_slot_to_message(message, state),
+            history=[*history, *history_from_state(state)],
+            limit=settings.chatwoot_agent_limit,
+        )
+    )
+    return response.intake or ProductIntakeResponse()
 
 
 def extract_collection(payload: Any) -> list[dict[str, Any]]:
