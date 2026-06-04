@@ -750,6 +750,7 @@ def history_from_state(state: dict[str, Any]) -> list[AgentMessage]:
 def merge_known_state(previous_state: dict[str, Any], intake: ProductIntakeResponse) -> dict[str, Any]:
     previous = previous_state.get("known") if isinstance(previous_state.get("known"), dict) else {}
     if intake.known:
+        clear_slots = intake_clear_slots(intake.known)
         intent = str(intake.known.get("rubro") or intake.intent or "")
         previous_rubro = previous.get("rubro")
         slots = memory_slots_for_intent(intent, previous_rubro == intent)
@@ -758,14 +759,29 @@ def merge_known_state(previous_state: dict[str, Any], intake: ProductIntakeRespo
             for key, value in previous.items()
             if key in slots and value is not None
         }
+        for key in clear_slots:
+            known.pop(key, None)
         if intake.known.get("lookup_mode") == "availability_width":
             known.pop("ancho_m", None)
             known.pop("requested_m2", None)
             known.pop("ambiguous_requested_m2", None)
-        known.update({key: value for key, value in intake.known.items() if value is not None})
+        known.update(
+            {
+                key: value
+                for key, value in intake.known.items()
+                if key != "clear_slots" and value is not None
+            }
+        )
         complete_derived_slots(known)
         return known
     return {key: value for key, value in previous.items() if value is not None}
+
+
+def intake_clear_slots(known: dict[str, Any]) -> set[str]:
+    clear_slots = known.get("clear_slots")
+    if not isinstance(clear_slots, list):
+        return set()
+    return {str(value) for value in clear_slots if isinstance(value, str)}
 
 
 def complete_derived_slots(known: dict[str, Any]) -> None:

@@ -59,6 +59,105 @@ Si no hace falta buscar, `answer` debe ser la respuesta final breve. Si falta in
 la `next_question`.
 """
 
+INTAKE_EXTRACTION_RULES = """\
+## Reglas de extracción de intake
+
+Tu `intake` es el estado estructurado actualizado del pedido del cliente. Usalo para reflejar lo que
+el cliente quiere ahora, no para repetir datos viejos que fueron corregidos o descartados.
+
+### Campos de `known`
+
+Para pisos:
+- `rubro`: "pisos"
+- `category`: "pisos_vinilicos" solo si el cliente pide explícitamente vinílico, PVC o vinil como algo que quiere.
+- `floor_kind`: "liso" o "diseno"
+- `floor_design`: "moneda", "semilla", "rayado", "simil_madera", "semilla_melon"
+- `espesor_mm`: número
+- `ancho_m`: número
+- `requested_m2`: número
+- `use`: "gimnasio", "hogar", "danza", "cochera", "oficina", "comercial", "industrial", "exterior", "baño", "dormitorio"
+- `traffic`: "alto", "medio", "medio_bajo", "bajo"
+- `budget_preference`: "economico"
+- `tags`: lista, por ejemplo ["antideslizante"]
+
+Para mangueras:
+- `rubro`: "mangueras"
+- `use`: "jardin", "industrial", "agua", "pileta", "aire"
+- `diameter`: string, por ejemplo "1/2", "3/4", "12 mm"
+- `length_m`: número
+
+Para mascotas:
+- `rubro`: "mascotas"
+- `animal`: "perro", "gato"
+- `size`: "grande", "mediano", "chico"
+- `toy_type`: "frisbee", "hueso", "pelota", "mordillo", "aro"
+
+### `missing`, `should_search` y `next_question`
+
+Usá `missing` solo para slots que todavía faltan para buscar:
+- Pisos: "floor_kind_or_design", "espesor_mm", "ancho_m", "requested_m2"
+- Mangueras: "use", "diameter", "length_m"
+- Mascotas: "animal", "size" si no hay `toy_type`
+
+`should_search=true` solo cuando el agente efectivamente va a llamar `buscar_productos` y tiene datos
+suficientes para hacerlo:
+- Pisos: `floor_kind` o `floor_design` + `espesor_mm` + `ancho_m` + `requested_m2`
+- Mangueras: `use` + `diameter` + `length_m`
+- Mascotas: `toy_type`, o `animal` + `size`
+- Hogar/calzado/general: algún producto o detalle específico buscable
+
+Si `should_search=false`, no llames `buscar_productos`. Si llamás `buscar_productos`, el `intake.should_search`
+debe ser `true`. Cuando falte información, `should_search=false`, completá `missing` y poné una
+`next_question` concisa en español rioplatense. En mensajes institucionales, `intent=null`,
+`known={}`, `missing=[]`, `should_search=false`, `next_question=null`.
+
+### Reglas críticas de intake
+
+1. Correcciones: si el cliente dice "no te pedí X", "no es lo que busco", "pero no", "quiero otra cosa",
+   "eso no", "no era eso" o corrige una característica, eliminá ese atributo de `known`. No lo incluyas
+   aunque aparezca antes en la conversación, y no lo uses en `buscar_productos`. Para borrar datos ya
+   guardados, incluí `known.clear_slots` con los nombres de slots a eliminar. Si es una corrección pura
+   sin nuevo producto, devolvé `intent=null`, `known={"clear_slots": [...]}`, `missing=[]`,
+   `should_search=false`, `next_question=null` y no llames herramientas.
+
+2. Espesores: "mm" siempre es `espesor_mm`. Valores típicos: 1.2, 2, 2.5, 3.
+
+3. Anchos: valores en metros típicos: 1, 1.2, 1.4, 1.5, 2.
+
+4. Vinílico: `category="pisos_vinilicos"` solo si el cliente pide "vinilico", "PVC" o "vinil"
+   explícitamente como algo que quiere. El default es goma, sin `category`.
+
+5. Recomendaciones por uso: si el cliente pide recomendación y no especificó espesor, para gimnasio,
+   danza, escenario, alto tránsito o industrial podés asumir `espesor_mm=3`; para hogar, dormitorio
+   u oficina podés asumir `espesor_mm=2`.
+
+6. Símil madera: usá `floor_design="simil_madera"` solo con frases explícitas como "simil madera",
+   "tipo madera" o "efecto madera". "piso de madera" no es simil madera.
+
+7. Respuestas cortas y contexto: si el asistente preguntó por ancho y el cliente responde "2" o
+   "1.20", eso es `ancho_m`. Si preguntó por espesor y responde "3", eso es `espesor_mm`. Si preguntó
+   ambos y el cliente responde "2 y 2" o "3 y 1.20", el primer número es espesor y el segundo es ancho.
+
+8. Mascotas y razas: pitbull, rottweiler, dogo u ovejero implican `animal="perro"` y `size="grande"`.
+
+9. Mensajes operativos o institucionales: saludos, despedidas, agradecimientos, preguntas de precio,
+   envío, pago, factura, horarios, ubicación, retiro, visitar el local, ver productos en persona,
+   pedir un asesor/persona, frustración o mensajes de proveedores deben devolver `intent=null`,
+   `known={}`, `missing=[]`, `should_search=false`, `next_question=null`. Esto manda aunque el mensaje
+   nombre un producto, porque la intención actual es operativa y no buscar catálogo.
+
+10. Disponibilidad: mensajes con "¿tienen...?", "¿tenés...?", "¿hay...?", "¿vendés...?" que preguntan
+    si existe un producto, material o característica deben tener `should_search=true` y una intención
+    buscable, aunque falten datos finos. Distinto: "stock" de un producto ya elegido o pedido antes
+    es operativo y debe ir como `intent=null`, sin búsqueda.
+
+11. Antideslizante: si el cliente lo pide, agregá "antideslizante" a `tags` y establecé
+    `floor_kind="diseno"` si no hay otro `floor_kind`.
+
+12. Diseño vs liso: "con diseño", "moneda", "semilla", "rayado" y "antideslizante" implican
+    `floor_kind="diseno"`. "liso" implica `floor_kind="liso"`.
+"""
+
 FIXED_SAFE_LINKS = {
     "https://wa.me/5491125539459",
     "https://maps.app.goo.gl/zMfBWeQwwPKFGBa89",
@@ -193,7 +292,7 @@ def build_openai_model(model_name: str, api_key: str) -> OpenAIChatModel:
 
 
 def build_pydantic_system_prompt(prompt_file: Path, catalog_context: str) -> str:
-    return "\n\n".join([build_system_prompt(prompt_file, catalog_context), PYDANTIC_AGENT_INSTRUCTIONS])
+    return "\n\n".join([build_system_prompt(prompt_file, catalog_context), PYDANTIC_AGENT_INSTRUCTIONS, INTAKE_EXTRACTION_RULES])
 
 
 def build_user_prompt(request: AgentRequest) -> str:

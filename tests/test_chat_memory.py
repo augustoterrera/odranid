@@ -62,6 +62,30 @@ class ChatMemoryTests(unittest.TestCase):
         self.assertIsNone(state["pending_slot"])
         self.assertIn("espesor", state["last_question"])
 
+    def test_build_memory_state_can_clear_corrected_slots(self) -> None:
+        state = build_memory_state(
+            {
+                "known": {
+                    "rubro": "pisos",
+                    "floor_kind": "diseno",
+                    "espesor_mm": 3,
+                    "ancho_m": 3,
+                    "requested_m2": 24,
+                }
+            },
+            ProductIntakeResponse(
+                intent=None,
+                known={"clear_slots": ["rubro", "floor_kind", "espesor_mm", "ancho_m", "requested_m2"]},
+                missing=[],
+                should_search=False,
+            ),
+            None,
+        )
+
+        self.assertEqual(state["known"], {})
+        self.assertFalse(state["should_search"])
+        self.assertEqual(state["missing"], [])
+
     def test_history_from_state_exposes_known_context(self) -> None:
         history = history_from_state({"known": {"requested_m2": 50, "floor_design": "moneda"}})
 
