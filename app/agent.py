@@ -1,8 +1,4 @@
-"""DEPRECATED: reemplazado por app/agents/catalog_agent.py (Fase 2 Agno).
-
-Se mantiene temporalmente por compatibilidad con utilidades del fallback
-determinista y tests existentes. Se elimina en Fase 3.
-"""
+"""Shared agent helpers used by the Agno catalog agent and search tool."""
 from __future__ import annotations
 
 from pathlib import Path
