@@ -11,6 +11,7 @@ from .models import ProductDocument, ProductSpecs
 
 
 NOISE_PHRASES = [
+    "somos odranid fabricantes e importadores hace 50 anos",
     "somos odranid fabricantes e importadores hace 60 anos",
     "priorizamos la calidad de cada producto",
     "preguntas frecuentes",

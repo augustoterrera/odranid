@@ -51,6 +51,7 @@ def compact_search_response(response: SearchResponse) -> dict[str, Any]:
                 "score": hit.score,
                 "matched_filters": hit.matched_filters,
                 "relaxed_filters": hit.relaxed_filters,
+                "is_alternative": hit.is_alternative,
                 "coverage": hit.coverage.model_dump() if hit.coverage else None,
             }
             for hit in response.hits
@@ -86,7 +87,7 @@ def response_from_search_response(response: SearchResponse, limit: int) -> Agent
 
 
 def search_intro(response: SearchResponse) -> str:
-    if response.used_relaxation:
+    if response.used_relaxation or any(hit.is_alternative for hit in response.hits):
         return "No encontré coincidencia exacta, pero te muestro opciones cercanas:"
     return "Te muestro estas opciones:"
 
@@ -124,6 +125,8 @@ def format_hit(index: int, hit: SearchHit) -> list[str]:
         details.append(hit.coverage.message)
     if hit.relaxed_filters:
         details.append("Alternativa cercana: se relajó " + ", ".join(hit.relaxed_filters) + ".")
+    elif hit.is_alternative:
+        details.append("Alternativa cercana: no coincide con todo lo pedido.")
     return ["\n".join(details)]
 
 
