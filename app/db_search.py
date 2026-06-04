@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from typing import Any
 
 import psycopg
+from psycopg.rows import dict_row
+from psycopg_pool import ConnectionPool
 
 from .embeddings import OpenAIEmbeddingClient
 from .models import ProductDocument, ProductFilters, ProductSpecs, SearchHit, SearchRequest, SearchResponse
@@ -12,6 +15,9 @@ from .search_common import post_filter_specific_terms, specific_required_terms
 
 class DatabaseSearchError(RuntimeError):
     pass
+
+
+_POOLS: dict[tuple[int, str], ConnectionPool] = {}
 
 
 RELAXATION_STEPS = [
@@ -48,10 +54,10 @@ class DatabaseCatalogSearch:
         if not self.postgres_url:
             return 0
 
-        with psycopg.connect(self.postgres_url) as conn:
+        with self._connect() as conn:
             with conn.cursor() as cur:
                 cur.execute("select count(*) from catalog_products")
-                return int(cur.fetchone()[0])
+                return int(cur.fetchone()["count"])
 
     def catalog_context(self) -> str:
         facets = self.catalog_facets("pisos", True)
@@ -86,10 +92,10 @@ class DatabaseCatalogSearch:
         if not self.postgres_url:
             return {}
 
-        with psycopg.connect(self.postgres_url) as conn:
+        with self._connect() as conn:
             with conn.cursor() as cur:
                 cur.execute("select catalog_facets(%s, %s)", (rubro, in_stock_only))
-                value = cur.fetchone()[0]
+                value = cur.fetchone()["catalog_facets"]
                 return dict(value)
 
     def _search_once(self, request: SearchRequest, query_embedding: list[float], relaxed: list[str]) -> list[SearchHit]:
@@ -115,8 +121,8 @@ class DatabaseCatalogSearch:
 
     def _search_postgres(self, query_embedding: list[float], filters: ProductFilters, limit: int) -> list[dict[str, Any]]:
         embedding = vector_literal(query_embedding)
-        with psycopg.connect(self.postgres_url) as conn:
-            with conn.cursor(row_factory=psycopg.rows.dict_row) as cur:
+        with self._connect() as conn:
+            with conn.cursor() as cur:
                 cur.execute(
                     """
                     select *
@@ -142,6 +148,29 @@ class DatabaseCatalogSearch:
                     },
                 )
                 return [dict(row) for row in cur.fetchall()]
+
+    def _connect(self) -> psycopg.Connection:
+        try:
+            return self._pool().connection()
+        except psycopg.Error as exc:
+            raise DatabaseSearchError(f"Could not connect to Postgres catalog search: {exc}") from exc
+
+    def _pool(self) -> ConnectionPool:
+        if not self.postgres_url:
+            raise DatabaseSearchError("No database search backend configured")
+        key = (os.getpid(), self.postgres_url)
+        pool = _POOLS.get(key)
+        if pool is None or pool.closed:
+            pool = ConnectionPool(
+                self.postgres_url,
+                min_size=1,
+                max_size=5,
+                kwargs={"row_factory": dict_row},
+                open=True,
+            )
+            _POOLS[key] = pool
+        return pool
+
 
 def relaxed_filters(filters: ProductFilters, relaxed: list[str]) -> ProductFilters:
     data = filters.model_dump()
