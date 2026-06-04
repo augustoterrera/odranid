@@ -679,22 +679,6 @@ def apply_pending_slot_to_message(message: str, state: dict[str, Any]) -> str:
     return message
 
 
-def analyze_with_memory(
-    message: str,
-    history: list[AgentMessage],
-    state: dict[str, Any],
-    api_key: str | None = None,
-    model: str = "gpt-4.1-mini",
-) -> ProductIntakeResponse:
-    if not api_key:
-        raise RuntimeError("analyze_with_memory requires an OpenAI API key (LLM-only pipeline)")
-    normalized_message = apply_pending_slot_to_message(message, state)
-    memory_messages = history_from_state(state)
-    combined_history = [*history, *memory_messages]
-    from .agents.requirements_agent import analyze_requirements
-    return analyze_requirements(normalized_message, combined_history, api_key, model)
-
-
 def should_reset_conversation_state(message: str, state: dict[str, Any]) -> bool:
     if not state:
         return False
