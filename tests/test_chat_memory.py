@@ -43,7 +43,7 @@ class ChatMemoryTests(unittest.TestCase):
 
         self.assertIsNone(pending_slot_from_intake(intake))
 
-    def test_build_memory_state_merges_known_values(self) -> None:
+    def test_build_memory_state_uses_fresh_known_values(self) -> None:
         state = build_memory_state(
             {"known": {"requested_m2": 50}},
             ProductIntakeResponse(
@@ -56,13 +56,13 @@ class ChatMemoryTests(unittest.TestCase):
             "ancho_m",
         )
 
-        self.assertEqual(state["known"]["requested_m2"], 50)
+        self.assertNotIn("requested_m2", state["known"])
         self.assertEqual(state["known"]["floor_design"], "moneda")
-        self.assertEqual(state["missing"], ["espesor_mm", "ancho_m"])
+        self.assertEqual(state["missing"], ["espesor_mm", "ancho_m", "requested_m2"])
         self.assertIsNone(state["pending_slot"])
         self.assertIn("espesor", state["last_question"])
 
-    def test_build_memory_state_can_clear_corrected_slots(self) -> None:
+    def test_build_memory_state_drops_previous_slots_omitted_by_fresh_intake(self) -> None:
         state = build_memory_state(
             {
                 "known": {
@@ -74,17 +74,20 @@ class ChatMemoryTests(unittest.TestCase):
                 }
             },
             ProductIntakeResponse(
-                intent=None,
-                known={"clear_slots": ["rubro", "floor_kind", "espesor_mm", "ancho_m", "requested_m2"]},
-                missing=[],
+                intent="pisos",
+                known={"rubro": "pisos", "floor_kind": "diseno"},
+                missing=["espesor_mm", "ancho_m", "requested_m2"],
                 should_search=False,
             ),
             None,
         )
 
-        self.assertEqual(state["known"], {})
+        self.assertEqual(state["known"], {"rubro": "pisos", "floor_kind": "diseno"})
+        self.assertNotIn("espesor_mm", state["known"])
+        self.assertNotIn("ancho_m", state["known"])
+        self.assertNotIn("requested_m2", state["known"])
         self.assertFalse(state["should_search"])
-        self.assertEqual(state["missing"], [])
+        self.assertEqual(state["missing"], ["espesor_mm", "ancho_m", "requested_m2"])
 
     def test_history_from_state_exposes_known_context(self) -> None:
         history = history_from_state({"known": {"requested_m2": 50, "floor_design": "moneda"}})
@@ -158,7 +161,7 @@ class ChatMemoryTests(unittest.TestCase):
         self.assertEqual(state["known"]["ancho_m"], 2)
         self.assertNotIn("use", state["known"])
 
-    def test_build_memory_state_recomputes_missing_after_merge(self) -> None:
+    def test_build_memory_state_recomputes_missing_from_authoritative_known(self) -> None:
         state = build_memory_state(
             {
                 "known": {
@@ -178,10 +181,11 @@ class ChatMemoryTests(unittest.TestCase):
             "ancho_m",
         )
 
-        self.assertEqual(state["known"]["ancho_m"], 2)
+        self.assertNotIn("ancho_m", state["known"])
+        self.assertNotIn("requested_m2", state["known"])
         self.assertEqual(state["known"]["espesor_mm"], 3)
-        self.assertEqual(state["missing"], [])
-        self.assertTrue(state["should_search"])
+        self.assertEqual(state["missing"], ["floor_kind_or_design", "ancho_m", "requested_m2"])
+        self.assertFalse(state["should_search"])
         self.assertIsNone(state["pending_slot"])
 
     def test_indifferent_design_counts_as_resolved_style(self) -> None:
@@ -189,7 +193,7 @@ class ChatMemoryTests(unittest.TestCase):
             {"known": {"rubro": "pisos", "requested_m2": 50}},
             ProductIntakeResponse(
                 intent="pisos",
-                known={"style_preference": "indiferente", "espesor_mm": 3, "ancho_m": 2},
+                known={"style_preference": "indiferente", "espesor_mm": 3, "ancho_m": 2, "requested_m2": 50},
                 missing=[],
                 should_search=True,
             ),

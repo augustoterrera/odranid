@@ -192,7 +192,7 @@ class ChatwootProductionTests(unittest.TestCase):
         self.assertIn("last_question", store.state)
         self.assertEqual(store.job_statuses[-1], "completed")
 
-    def test_openai_configured_preserves_short_reply_context_for_agent(self) -> None:
+    def test_openai_configured_preserves_real_short_reply_context_for_agent(self) -> None:
         store = ProcessingStore()
         store.pending = [ChatMessage(1, 123, "10", "user", "2 y 2", {})]
         previous_question = "¿Qué espesor y ancho buscás? Por ejemplo: 3 mm y 1,20 m."
@@ -224,7 +224,7 @@ class ChatwootProductionTests(unittest.TestCase):
 
         self.assertEqual(seen_requests[0].message, "2 y 2")
         self.assertIn(previous_question, [message.content for message in seen_requests[0].history])
-        self.assertTrue(any(message.content.startswith("Datos ya recopilados:") for message in seen_requests[0].history))
+        self.assertFalse(any(message.content.startswith("Datos ya recopilados:") for message in seen_requests[0].history))
 
     def test_outbox_idempotency_key_prevents_duplicate_outbox_rows(self) -> None:
         store = ProcessingStore()

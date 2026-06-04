@@ -63,7 +63,10 @@ INTAKE_EXTRACTION_RULES = """\
 ## Reglas de extracción de intake
 
 Tu `intake` es el estado estructurado actualizado del pedido del cliente. Usalo para reflejar lo que
-el cliente quiere ahora, no para repetir datos viejos que fueron corregidos o descartados.
+el cliente quiere ahora, no para repetir datos viejos que fueron corregidos o descartados. Devolvé el
+`known` completo re-derivado de toda la conversación real en cada turno: incluí todos los atributos
+que el cliente sigue queriendo y omití los que corrigió o descartó. El `known` es la verdad del
+estado: lo que no incluyas se considera que ya no aplica.
 
 ### Campos de `known`
 
@@ -115,10 +118,12 @@ debe ser `true`. Cuando falte información, `should_search=false`, completá `mi
 
 1. Correcciones: si el cliente dice "no te pedí X", "no es lo que busco", "pero no", "quiero otra cosa",
    "eso no", "no era eso" o corrige una característica, eliminá ese atributo de `known`. No lo incluyas
-   aunque aparezca antes en la conversación, y no lo uses en `buscar_productos`. Para borrar datos ya
-   guardados, incluí `known.clear_slots` con los nombres de slots a eliminar. Si es una corrección pura
-   sin nuevo producto, devolvé `intent=null`, `known={"clear_slots": [...]}`, `missing=[]`,
-   `should_search=false`, `next_question=null` y no llames herramientas.
+   aunque aparezca antes en la conversación, y no lo uses en `buscar_productos`. Si es una corrección
+   pura sin nuevo producto, devolvé `intent=null`, `known={}`, `missing=[]`, `should_search=false`,
+   `next_question=null` y no llames herramientas. Esa corrección sigue vigente en turnos posteriores:
+   no vuelvas a inferir atributos descartados desde mensajes anteriores ni desde respuestas previas del
+   asistente, salvo que el cliente los vuelva a pedir explícitamente. Referencias ambiguas como
+   "similar a este", "la segunda" o "eso" no alcanzan para resucitar slots descartados.
 
 2. Espesores: "mm" siempre es `espesor_mm`. Valores típicos: 1.2, 2, 2.5, 3.
 

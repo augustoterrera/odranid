@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     chatwoot_webhook_timestamp_tolerance_seconds: int = 300
     chatwoot_auto_reply: bool = True
     chatwoot_agent_limit: int = 5
-    chatwoot_history_limit: int = 8
+    chatwoot_history_limit: int = 16
     chat_memory_enabled: bool = True
     chatwoot_lock_seconds: int = 60
     chatwoot_lock_wait_seconds: int = 20

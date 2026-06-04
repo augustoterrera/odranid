@@ -581,7 +581,7 @@ def build_memory_state(previous_state: dict[str, Any], intake: ProductIntakeResp
             "last_question": previous_state.get("last_question") or fallback_pending_question(previous_state.get("pending_slot")),
         }
 
-    known = merge_known_state(previous_state, intake)
+    known = authoritative_known_from_intake(intake)
     missing = recompute_missing_slots(intake.intent, known, intake.missing)
     should_search = not missing if intake.intent in {"pisos", "mangueras"} else intake.should_search
     next_question = None
@@ -747,41 +747,10 @@ def history_from_state(state: dict[str, Any]) -> list[AgentMessage]:
     return [AgentMessage(role="user", content=f"Datos ya recopilados: {text}")]
 
 
-def merge_known_state(previous_state: dict[str, Any], intake: ProductIntakeResponse) -> dict[str, Any]:
-    previous = previous_state.get("known") if isinstance(previous_state.get("known"), dict) else {}
-    if intake.known:
-        clear_slots = intake_clear_slots(intake.known)
-        intent = str(intake.known.get("rubro") or intake.intent or "")
-        previous_rubro = previous.get("rubro")
-        slots = memory_slots_for_intent(intent, previous_rubro == intent)
-        known = {
-            key: value
-            for key, value in previous.items()
-            if key in slots and value is not None
-        }
-        for key in clear_slots:
-            known.pop(key, None)
-        if intake.known.get("lookup_mode") == "availability_width":
-            known.pop("ancho_m", None)
-            known.pop("requested_m2", None)
-            known.pop("ambiguous_requested_m2", None)
-        known.update(
-            {
-                key: value
-                for key, value in intake.known.items()
-                if key != "clear_slots" and value is not None
-            }
-        )
-        complete_derived_slots(known)
-        return known
-    return {key: value for key, value in previous.items() if value is not None}
-
-
-def intake_clear_slots(known: dict[str, Any]) -> set[str]:
-    clear_slots = known.get("clear_slots")
-    if not isinstance(clear_slots, list):
-        return set()
-    return {str(value) for value in clear_slots if isinstance(value, str)}
+def authoritative_known_from_intake(intake: ProductIntakeResponse) -> dict[str, Any]:
+    known = {key: value for key, value in intake.known.items() if value is not None}
+    complete_derived_slots(known)
+    return known
 
 
 def complete_derived_slots(known: dict[str, Any]) -> None:
@@ -808,21 +777,6 @@ def safe_float(value: Any) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
-
-
-def memory_slots_for_intent(intent: str, same_previous_rubro: bool) -> set[str]:
-    base = set(CORE_MEMORY_SLOTS)
-    if not same_previous_rubro:
-        return base
-    if intent == "pisos":
-        return base | {"use", "traffic", "budget_preference", "recommendation_mode", "tags", "roll_count", "roll_length_m"}
-    if intent == "mangueras":
-        return {"rubro", "use", "diameter", "length_m", "reinforced"}
-    if intent == "mascotas":
-        return {"rubro", "animal", "size", "toy_type", "resistant"}
-    if intent in {"hogar", "calzado", "general"}:
-        return {"rubro", "tipo_producto", "tipo_calzado"}
-    return base
 
 
 def known_to_natural_text(known: dict[str, Any]) -> str:
@@ -900,21 +854,6 @@ def first_row(payload: Any) -> dict[str, Any]:
     if isinstance(payload, dict):
         return payload
     raise ChatMemoryError("Postgres returned an empty or invalid row payload")
-
-
-CORE_MEMORY_SLOTS = {
-    "rubro",
-    "category",
-    "requested_m2",
-    "ambiguous_requested_m2",
-    "floor_kind",
-    "floor_design",
-    "style_preference",
-    "espesor_mm",
-    "ancho_m",
-    "lookup_mode",
-    "coverage_required",
-}
 
 
 def build_chat_memory_store_from_settings(settings: Any) -> ChatMemoryStore | None:

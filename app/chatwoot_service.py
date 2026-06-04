@@ -13,7 +13,6 @@ from .chat_memory import (
     ChatMemoryStore,
     apply_pending_slot_to_message,
     build_memory_state,
-    history_from_state,
     pending_slot_from_intake,
     should_reset_conversation_state,
 )
@@ -113,14 +112,13 @@ def build_agent_response_for_pending_messages(
     history = [] if reset_state else store.recent_history(conversation.id, settings.chatwoot_history_limit)
 
     agent_message = apply_pending_slot_to_message(user_content, active_state)
-    agent_history = [*history, *history_from_state(active_state)]
 
     # Single-agent pipeline: PydanticAI handles the message once and returns
     # answer, intake, and tool call traces. No duplicated intake or split agents.
     agent_response = run_agent(
         AgentRequest(
             message=agent_message,
-            history=agent_history,
+            history=history,
             limit=settings.chatwoot_agent_limit,
         )
     )

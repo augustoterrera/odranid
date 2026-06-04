@@ -16,7 +16,6 @@ sys.path.insert(0, str(ROOT))
 from app.chat_memory import (  # noqa: E402
     apply_pending_slot_to_message,
     build_memory_state,
-    history_from_state,
     pending_slot_from_intake,
     should_reset_conversation_state,
 )
@@ -257,7 +256,7 @@ def replay_turn(turn: ReplayTurn, intake_only: bool) -> dict[str, Any]:
         response = run_agent(
             AgentRequest(
                 message=apply_pending_slot_to_message(turn.user_message, turn.state_before),
-                history=[*turn.history, *history_from_state(turn.state_before)],
+                history=turn.history,
                 limit=settings.chatwoot_agent_limit,
             )
         )
