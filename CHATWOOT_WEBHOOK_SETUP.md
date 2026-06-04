@@ -54,7 +54,7 @@ ODRANID_CHATWOOT_WEBHOOK_SECRET=...
 
 - Procesa solamente `message_created` con `message_type=incoming`.
 - Ignora mensajes `outgoing`, privados, vacíos o no-texto para evitar loops.
-- Guarda conversaciones, mensajes, eventos y jobs en Supabase/Postgres si están configuradas `ODRANID_SUPABASE_URL` y `ODRANID_SUPABASE_SERVICE_ROLE_KEY`.
+- Guarda conversaciones, mensajes, eventos y jobs en Postgres si está configurada `ODRANID_DATABASE_URL`.
 - Usa memoria persistente por `conversation_id`; no depende solo del historial incluido en el webhook.
 - Ejecuta el agente igual que `POST /agent/respond`.
 - Si `ODRANID_CHATWOOT_AUTO_REPLY=true`, publica la respuesta en Chatwoot como mensaje `outgoing`.
@@ -62,12 +62,12 @@ ODRANID_CHATWOOT_WEBHOOK_SECRET=...
 - En producción, responde rápido `queued` al webhook y procesa el agente en background.
 - Usa lock por conversación para evitar procesar dos mensajes del mismo chat al mismo tiempo.
 
-## Migración Supabase
+## Migración Postgres
 
-Aplicar en Supabase SQL Editor:
+Aplicar con el servicio `migrate` de Docker Compose o ejecutar:
 
 ```text
-supabase/migrations/003_chat_memory.sql
+postgres/migrations/003_chat_memory.sql
 ```
 
 Esta migración crea:
@@ -77,17 +77,6 @@ Esta migración crea:
 - `chat_processed_events`
 - `chat_webhook_jobs`
 - RPCs de deduplicación, jobs y locks por conversación.
-
-Nota sobre Supabase/PostgREST:
-
-- El código usa REST directo sobre tablas para conversaciones, mensajes, eventos y jobs.
-- Esto evita quedar bloqueado si el schema cache de PostgREST tarda en reconocer RPCs nuevas.
-- Los locks intentan usar RPC atómica; si Supabase devuelve `PGRST202` por cache, el código cae a un fallback REST temporal para no cortar las pruebas.
-- Para producción, igual conviene que las RPC queden visibles y ejecutar:
-
-```sql
-notify pgrst, 'reload schema';
-```
 
 Si necesitás levantar el webhook antes de aplicar esta migración, usar temporalmente:
 

@@ -56,10 +56,7 @@ odranid/
 │   └── analyze_shadow_report.py          # Analiza reportes de "shadow" testing
 │
 ├── postgres/
-│   ├── schema.sql              # Esquema base Postgres + pgvector + funciones de búsqueda
 │   └── migrations/             # 4 migraciones .sql incrementales
-├── supabase/
-│   └── migrations/             # 4 migraciones .sql (mismos nombres que postgres/, contenido distinto)
 │
 ├── tests/                      # 9 archivos de tests (pytest)
 ├── reports/                    # Salidas de shadow-testing y análisis (jsonl + md + json)
@@ -94,9 +91,7 @@ Versiones tomadas de `requirements.txt` (usa rangos `>=`, no hay lockfile ni pyp
 
 - **Base de datos:** PostgreSQL con extensión **pgvector** (embeddings `vector(1536)`). En el
   compose local se usa la imagen `pgvector/pgvector:pg16`. El `.env.example` apunta como backend
-  de producción a un Postgres directo (vía Tailscale/VPS); `AGENT.md` menciona Supabase como base
-  principal de producción, pero **no hay código que use Supabase** (no existe `app/supabase_store.py`
-  pese a estar citado en la doc, y `grep supabase` sobre `app/` no devuelve nada).
+  de producción a un Postgres directo (vía Tailscale/VPS).
 - **Broker / backend Celery:** Redis. En el compose se usa **Dragonfly** (compatible con protocolo
   Redis) en `redis://dragonfly:6379/0` (broker) y `/1` (backend de resultados).
 - **Modelos:** `gpt-4.1-mini` para el agente (configurable), `text-embedding-3-small` para embeddings.
@@ -218,7 +213,7 @@ Nota: el archivo `.env` real está presente en el repo (no solo el `.example`).
 Hay **dos motores** detrás de la misma interfaz `SearchRequest → SearchResponse`:
 
 - **Producción: `DatabaseCatalogSearch`** ([app/db_search.py](app/db_search.py)). Se activa cuando hay
-  `OPENAI_API_KEY` + `DATABASE_URL`.
+  `OPENAI_API_KEY` + `ODRANID_DATABASE_URL`.
   1. Embebe la query con OpenAI (`text-embedding-3-small`).
   2. Llama a la función SQL `search_catalog_products(...)` en Postgres, que hace **ANN con pgvector**
      (`embedding <=> query_embedding`, índice HNSW coseno) y aplica filtros por columnas: `rubro`,
@@ -297,13 +292,9 @@ En cada turno:
   `compact_search_response` siguen siendo importados por la capa nueva (catalog_agent y la tool).
   Conviven funciones realmente sin uso en ese archivo (p. ej. `response_from_search_response`,
   `format_hit`, `search_intro`), que arman respuestas formateadas que el pipeline LLM ya no llama.
-- **Migraciones duplicadas y divergentes.** Existen `postgres/migrations/` y `supabase/migrations/`
-  con los mismos 4 nombres de archivo (`001`–`004`) pero **contenido distinto** (difieren en tamaño y
-  en bytes). Además hay un `postgres/schema.sql` que repite el esquema base. No queda claro cuál es la
-  fuente de verdad.
-- **Documentación desalineada con el código.** `AGENT.md` describe Supabase como "base principal de
-  producción" y cita `app/supabase_store.py`, **que no existe**. No hay ninguna referencia a Supabase
-  en `app/`. La realidad del código es Postgres directo + pgvector.
+- **Migraciones consolidadas.** `postgres/migrations/` es la fuente de verdad que aplica el servicio
+  `migrate` de Docker Compose.
+- **Documentación alineada con el código.** La realidad del código es Postgres directo + pgvector.
 - **Dos caminos de intake en paralelo.** El endpoint `POST /agent/respond` (`run_team`) llama a
   `analyze_requirements` directamente, mientras que el flujo de Chatwoot pasa por
   `analyze_with_memory` + `build_memory_state` (con normalización de slot pendiente y fusión de estado).

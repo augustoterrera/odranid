@@ -111,9 +111,9 @@ Esto evita el caso actual de cero resultados por una sola faceta mal interpretad
 
 ### 5. Base de Datos Principal
 
-Supabase + pgvector.
+Postgres directo + pgvector.
 
-Postgres directo queda como fallback/local/dev porque comparte el mismo modelo relacional y las mismas funciones SQL base.
+El schema y las funciones SQL viven en `postgres/migrations/` y se aplican con el servicio `migrate` de Docker Compose.
 
 Tabla sugerida:
 
@@ -218,7 +218,7 @@ Ejemplo de busqueda:
 Prioridad tecnica:
 
 1. Conectar ingesta real WooCommerce.
-2. Persistir `catalog_products` en Supabase.
+2. Persistir `catalog_products` en Postgres.
 3. Agregar proveedor de embeddings.
 4. Implementar busqueda pgvector + reranking por facetas.
 5. Agregar parser de consulta a filtros estructurados.

@@ -11,8 +11,7 @@ Principio rector:
 - La IA conversa.
 - El microservicio gobierna la busqueda, facets, calculos, normalizacion y reglas duras.
 - WooCommerce es la fuente de verdad del catalogo.
-- Supabase + pgvector es la base principal de produccion.
-- Postgres directo queda como fallback/local/VPS dev.
+- Postgres directo + pgvector es la base principal de produccion.
 - El prompt del agente no debe contener logica pesada ni catalogo completo.
 
 ## Arquitectura Actual
@@ -25,17 +24,14 @@ Componentes principales:
 - `app/query_parser.py`: SOLO `filters_from_intake()` — convierte el intake estructurado del LLM en `ProductFilters`. Ya no infiere nada por keywords.
 - `app/slot_questions.py`: helpers deterministas de slot/cálculo sobre el estado YA estructurado por el LLM (`floor_next_question`, `hose_next_question`, `derived_roll_surface_m2`). No es extracción de intención.
 - `app/agents/requirements_agent.py`: ÚNICO analizador de intención/estado. LLM con `output_schema=ProductIntakeResponse`. No hay fallback por keywords.
-- `app/chat_memory.py`: memoria conversacional persistente, dedupe, jobs y locks contra Supabase/Postgres.
-- `app/db_search.py`: busqueda vectorial/facetada contra Supabase RPC o Postgres directo.
+- `app/chat_memory.py`: memoria conversacional persistente, dedupe, jobs y locks contra Postgres.
+- `app/db_search.py`: busqueda vectorial/facetada contra Postgres directo.
 - `app/coverage.py`: calcula cobertura para pisos cuando el cliente pide m2.
 - `app/chatwoot.py`: integracion Chatwoot webhook + envio de respuestas.
 - `app/models.py`: contratos Pydantic.
-- `app/supabase_store.py`: upsert a Supabase por REST o RPC.
 - `app/postgres_store.py`: upsert directo a Postgres.
-- `scripts/sync_catalog.py`: sincronizacion del catalogo desde WooCommerce a Supabase o Postgres.
-- `supabase/migrations/`: schema/RPC principal de produccion.
-- `postgres/schema.sql`: schema base Postgres + pgvector.
-- `postgres/migrations/`: migraciones incrementales.
+- `scripts/sync_catalog.py`: sincronizacion del catalogo desde WooCommerce a Postgres.
+- `postgres/migrations/`: schema/RPC principal de produccion aplicado por el servicio `migrate` de Docker Compose.
 
 Endpoints importantes:
 
@@ -83,8 +79,7 @@ Reglas de oro:
 
 - No depender de `productos.json` en produccion. Queda como fixture/snapshot de desarrollo.
 - No volver a n8n como lugar de logica principal.
-- Mantener Supabase como backend principal de runtime.
-- Usar Postgres directo solo como fallback/local/dev.
+- Mantener Postgres directo + pgvector como backend principal de runtime.
 - No hacer que el agente arme SQL ni filtros estrictos manualmente.
 - No interpretar `2m2` como `ancho_m = 2` ni como `espesor_mm = 2`.
 - El agente debe mandar query natural a `buscar_productos`.
@@ -94,7 +89,7 @@ Reglas de oro:
 - El contexto cacheado del catalogo debe venir desde `GET /catalog/context`.
 - La recopilacion de datos minimos por rubro la hace el RequirementsAgent (LLM, `app/agents/requirements_agent.py`); las preguntas de slot deterministas viven en `app/slot_questions.py`.
 - Si el cliente pide superficie, `/search` debe devolver `coverage` por hit cuando sea posible.
-- La memoria conversacional de produccion debe vivir en Supabase/Postgres, no depender solo del historial que envie Chatwoot en cada webhook.
+- La memoria conversacional de produccion debe vivir en Postgres, no depender solo del historial que envie Chatwoot en cada webhook.
 - Redis puede agregarse despues para locks, deduplicacion y cache temporal, pero no como memoria principal.
 - MongoDB no es necesario para esta etapa: Postgres `jsonb` cubre bien el estado flexible de conversacion.
 
@@ -167,7 +162,7 @@ Reglas:
 - Usar `ODRANID_CHATWOOT_AUTO_REPLY=false` para pruebas donde se quiere ver el output sin publicar en Chatwoot.
 - Enviar respuestas a Chatwoot con `POST /api/v1/accounts/{account_id}/conversations/{conversation_id}/messages`.
 - Deduplicar por `X-Chatwoot-Delivery`, o por `conversation_id + message_id` si no viene ese header.
-- Con Supabase configurado, el webhook guarda evento, encola job, procesa en background y persiste memoria por `conversation_id`.
+- Con `ODRANID_DATABASE_URL` configurado, el webhook guarda evento, encola job, procesa en background y persiste memoria por `conversation_id`.
 
 ## Memoria Conversacional
 
@@ -180,14 +175,14 @@ Objetivo:
 
 Backend recomendado:
 
-- Supabase/Postgres como memoria persistente principal.
+- Postgres como memoria persistente principal.
 - Redis solo si mas adelante hace falta para deduplicacion distribuida, locks o cache de pocos minutos.
 - No sumar MongoDB salvo que aparezca una necesidad fuerte fuera de Postgres.
 
 Implementado en:
 
 - `app/chat_memory.py`
-- `supabase/migrations/003_chat_memory.sql`
+- `postgres/migrations/003_chat_memory.sql`
 
 Tablas:
 
@@ -452,19 +447,17 @@ No imprimir secretos de `.env`.
 Variables clave:
 
 - `OPENAI_API_KEY` o `ODRANID_OPENAI_API_KEY`
-- `ODRANID_SUPABASE_URL`
-- `ODRANID_SUPABASE_SERVICE_ROLE_KEY`
 - `ODRANID_DATABASE_URL`
 - `ODRANID_AGENT_MODEL`
 - `ODRANID_WOOCOMMERCE_BASE_URL`
 - `ODRANID_WOOCOMMERCE_PER_PAGE`
 - `ODRANID_WOOCOMMERCE_MAX_PAGES`
+- `ODRANID_WOOCOMMERCE_STOCK_STATUS`
 
 Prioridad de backend:
 
-- Si existen `ODRANID_SUPABASE_URL` y `ODRANID_SUPABASE_SERVICE_ROLE_KEY`, usar Supabase.
-- Si no, usar `ODRANID_DATABASE_URL` como fallback Postgres directo.
-- Si no existe ninguno, el servicio puede usar modo local/desarrollo, pero no es el runtime productivo.
+- Usar `ODRANID_DATABASE_URL` para Postgres directo + pgvector.
+- Si no existe, el servicio puede usar modo local/desarrollo para algunos endpoints, pero no es el runtime productivo.
 
 ## Roadmap: Migración a Agno Multi-Agente
 
@@ -628,7 +621,7 @@ Este flujo reemplaza `run_openai_agent()` y `current_agent_context()` en `main.p
 | `app/chatwoot*.py` | Integración Chatwoot: sin cambios |
 | `app/normalization.py` | Normalización de productos: sin cambios |
 | `app/tasks/` | Celery tasks: sin cambios |
-| `supabase/`, `postgres/` | Schema de DB: sin cambios |
+| `postgres/` | Schema de DB: sin cambios |
 | `prompt_agente_odranid.md` | Prompt institucional: sin cambios |
 
 ### Fases De Migración

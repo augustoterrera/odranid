@@ -40,18 +40,23 @@ sudo -u postgres psql -d odranid_catalog
 grant all on schema public to odranid;
 ```
 
-## 3. Aplicar Schema
+## 3. Aplicar Migraciones
 
 Desde tu maquina local, usando la IP de Tailscale de la VPS:
 
 ```bash
-psql "postgresql://odranid:CAMBIAR_PASSWORD@100.x.y.z:5432/odranid_catalog" -f postgres/schema.sql
+for file in postgres/migrations/*.sql; do
+  psql "postgresql://odranid:CAMBIAR_PASSWORD@100.x.y.z:5432/odranid_catalog" -v ON_ERROR_STOP=1 -f "$file"
+done
 ```
 
 O desde la VPS:
 
 ```bash
-psql -d odranid_catalog -f /ruta/al/proyecto/postgres/schema.sql
+cd /ruta/al/proyecto
+for file in postgres/migrations/*.sql; do
+  psql -d odranid_catalog -v ON_ERROR_STOP=1 -f "$file"
+done
 ```
 
 ## 4. Configurar .env
@@ -62,10 +67,10 @@ Agregar:
 ODRANID_DATABASE_URL=postgresql://odranid:CAMBIAR_PASSWORD@100.x.y.z:5432/odranid_catalog
 ```
 
-Postgres directo queda como fallback/local/dev. Si tambien tenes variables Supabase en `.env`, el sync usa Supabase por defecto. Para forzar Postgres:
+Postgres directo + pgvector es el backend de produccion. Para sincronizar el catalogo:
 
 ```bash
-.venv/bin/python scripts/sync_catalog.py --store postgres
+.venv/bin/python scripts/sync_catalog.py
 ```
 
 ## 5. Sincronizar Catalogo
