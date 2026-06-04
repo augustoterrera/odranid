@@ -40,6 +40,9 @@ class Settings(BaseSettings):
     typesense_protocol: str = "http"
     typesense_api_key: str | None = None
     typesense_collection: str = "catalog_products"
+    # Opt-in: when True (and an API key is set), /search routes through Typesense
+    # instead of pgvector. Kept off until the index is synced and validated.
+    typesense_search_enabled: bool = False
 
     # Keep provider details outside business logic. These can point to
     # OpenAI, another embedding provider, or a local model later.

@@ -90,6 +90,9 @@ class SearchHit(BaseModel):
     matched_filters: list[str] = Field(default_factory=list)
     relaxed_filters: list[str] = Field(default_factory=list)
     coverage: CoverageCalculation | None = None
+    # True when the product does not match every requested attribute and is
+    # offered as a similar alternative rather than an exact match.
+    is_alternative: bool = False
 
 
 class SearchResponse(BaseModel):

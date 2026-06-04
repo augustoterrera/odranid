@@ -24,7 +24,7 @@ from .chatwoot_service import chatwoot_event_key, persist_incoming_chatwoot_even
 from .config import settings
 from .coverage import enrich_search_response
 from .db_search import DatabaseCatalogSearch, DatabaseSearchError
-from .embeddings import OpenAIEmbeddingClient
+from .embeddings import OpenAIEmbeddingClient, chunked
 from .models import (
     AgentRequest,
     AgentResponse,
@@ -38,6 +38,9 @@ from .models import (
 from .normalization import extract_woocommerce_products, normalize_product
 from .rag_precontext import build_rag_precontext
 from .retrieval import CatalogSearch
+from .typesense_client import build_typesense_client
+from .typesense_index import sync_collection
+from .typesense_search import TypesenseCatalogSearch
 from .woocommerce import build_client_from_settings
 
 app = FastAPI(title=settings.app_name)
@@ -46,6 +49,7 @@ logger = logging.getLogger(__name__)
 catalog: list[ProductDocument] = []
 search_engine: CatalogSearch | None = None
 db_search_engine: DatabaseCatalogSearch | None = None
+typesense_search_engine: TypesenseCatalogSearch | None = None
 context_cache = CatalogContextCache(settings.context_cache_file)
 chat_memory_store: ChatMemoryStore | None = None
 
@@ -61,8 +65,16 @@ def health() -> dict[str, object]:
     return {
         "ok": True,
         "products": db_search_engine.count_products() if db_search_engine else len(catalog),
-        "search_backend": "database" if db_search_engine else "local",
+        "search_backend": search_backend_name(),
     }
+
+
+def search_backend_name() -> str:
+    if typesense_search_engine is not None:
+        return "typesense"
+    if db_search_engine is not None:
+        return "database"
+    return "local"
 
 
 @app.get("/catalog/context")
@@ -302,6 +314,9 @@ def current_catalog_context() -> str:
 
 
 def perform_search(request: SearchRequest) -> SearchResponse:
+    if typesense_search_engine is not None:
+        return enrich_search_response(typesense_search_engine.search(request))
+
     if db_search_engine is not None:
         return enrich_search_response(db_search_engine.search(request))
 
@@ -324,8 +339,40 @@ def fetch_woocommerce() -> dict[str, object]:
     return {"ok": True, "products": len(catalog)}
 
 
+@app.post("/admin/typesense-sync")
+def typesense_sync() -> dict[str, object]:
+    """Build/refresh the Typesense index from the normalized catalog.
+
+    Generates embeddings for the same content indexed in Postgres so the
+    hybrid (keyword + vector) search has vectors to rank with.
+    """
+    if not settings.typesense_api_key:
+        raise HTTPException(status_code=503, detail="ODRANID_TYPESENSE_API_KEY is required")
+
+    load_catalog(settings.catalog_file)
+    documents = list(catalog)
+    embeddings_by_id: dict[int, list[float] | None] = {}
+    if settings.openai_api_key:
+        embedder = OpenAIEmbeddingClient(settings.openai_api_key, settings.embedding_model)
+        for batch in chunked(documents, 64):
+            vectors = embedder.embed_many([document.content for document in batch])
+            for document, vector in zip(batch, vectors, strict=True):
+                embeddings_by_id[document.id] = vector
+
+    client = build_typesense_client()
+    indexed = sync_collection(
+        client,
+        settings.typesense_collection,
+        documents,
+        embeddings_by_id,
+        recreate=True,
+    )
+    return {"ok": True, "indexed": indexed, "embeddings": len(embeddings_by_id)}
+
+
 def configure_search(force_local_reload: bool = False) -> None:
-    global db_search_engine
+    global db_search_engine, typesense_search_engine
+    typesense_search_engine = build_typesense_engine()
     if not force_local_reload and settings.openai_api_key and settings.database_url:
         db_search_engine = DatabaseCatalogSearch(
             embedder=OpenAIEmbeddingClient(settings.openai_api_key, settings.embedding_model),
@@ -335,6 +382,25 @@ def configure_search(force_local_reload: bool = False) -> None:
 
     db_search_engine = None
     load_catalog(settings.catalog_file)
+
+
+def build_typesense_engine() -> TypesenseCatalogSearch | None:
+    """Opt-in Typesense search engine. Returns None unless explicitly enabled.
+
+    Postgres stays the source of truth; this only changes where /search reads.
+    """
+    if not (settings.typesense_search_enabled and settings.typesense_api_key):
+        return None
+    embedder = (
+        OpenAIEmbeddingClient(settings.openai_api_key, settings.embedding_model)
+        if settings.openai_api_key
+        else None
+    )
+    return TypesenseCatalogSearch(
+        client=build_typesense_client(),
+        embedder=embedder,
+        collection=settings.typesense_collection,
+    )
 
 
 def load_catalog(path: Path | None = None) -> None:
