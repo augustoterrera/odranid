@@ -76,9 +76,11 @@ def calculate_coverage(product: ProductDocument, requested_m2: float) -> Coverag
     if sale_unit == "metro_lineal":
         return cut_to_measure_coverage(requested_m2, specs.ancho_m, sale_unit)
 
-    # Rollos/cortes: siempre se expresa en cantidad de rollos/cortes, nunca en metros lineales.
+    # Rollos/cortes: solo contar unidades si es un rollo real (largo/rendimiento creíbles)
+    # o un corte. Si no, el rendimiento es un dato basura (ej. largo=1 por defecto) y daría
+    # cantidades absurdas ("15 rollos"); en ese caso se vende cortado a medida.
     coverage_m2, source = coverage_per_unit(product)
-    if coverage_m2 is not None and coverage_m2 > 0:
+    if coverage_m2 is not None and coverage_m2 > 0 and (sale_unit == "corte" or has_roll_length(product)):
         rolls_needed = max(1, math.ceil(requested_m2 / coverage_m2))
         surplus = max(0.0, rolls_needed * coverage_m2 - requested_m2)
         unit_label = coverage_unit_label(sale_unit)

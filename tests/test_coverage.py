@@ -117,8 +117,25 @@ class CoverageTests(unittest.TestCase):
 
         coverage = calculate_coverage(product, requested_m2=3)
 
+        # No es metro_lineal (el titulo dice "cuadrado"); y sin largo real de rollo
+        # no inventa una cantidad absurda: se vende cortado a medida.
         self.assertEqual(coverage.sale_unit, "rollo")
-        self.assertIn("rollo", coverage.message)
+        self.assertNotIn("lineal", coverage.message)
+        self.assertIn("cortado a medida", coverage.message)
+
+    def test_fake_roll_without_real_length_is_cut_to_measure(self) -> None:
+        # "X 1mt Ancho" tipado rollo pero sin largo real (largo=1, rend=1):
+        # NO debe decir "15 rollos", sino cortado a medida.
+        product = product_with_specs(
+            product_type="rollo",
+            specs=ProductSpecs(ancho_m=1, largo_m=1, rendimiento_m2=1),
+            title="Piso Semilla 3mm X 1mt Ancho",
+        )
+
+        coverage = calculate_coverage(product, requested_m2=15)
+
+        self.assertIsNone(coverage.rolls_needed)
+        self.assertIn("cortado a medida", coverage.message)
 
     def test_missing_measures_needs_advisor(self) -> None:
         product = product_with_specs(product_type="unidad", specs=ProductSpecs())
