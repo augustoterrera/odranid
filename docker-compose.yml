@@ -42,10 +42,13 @@ services:
       ODRANID_DATABASE_URL: ${ODRANID_DATABASE_URL:-postgresql://odranid:odranid@postgres:5432/odranid}
       ODRANID_CELERY_BROKER_URL: redis://dragonfly:6379/0
       ODRANID_CELERY_RESULT_BACKEND: redis://dragonfly:6379/1
+      ODRANID_TYPESENSE_HOST: ${ODRANID_TYPESENSE_HOST:-typesense}
     ports:
       - "8000:8000"
     depends_on:
       dragonfly:
+        condition: service_healthy
+      typesense:
         condition: service_healthy
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000
 
@@ -87,8 +90,11 @@ services:
       ODRANID_DATABASE_URL: ${ODRANID_DATABASE_URL:-postgresql://odranid:odranid@postgres:5432/odranid}
       ODRANID_CELERY_BROKER_URL: redis://dragonfly:6379/0
       ODRANID_CELERY_RESULT_BACKEND: redis://dragonfly:6379/1
+      ODRANID_TYPESENSE_HOST: ${ODRANID_TYPESENSE_HOST:-typesense}
     depends_on:
       dragonfly:
+        condition: service_healthy
+      typesense:
         condition: service_healthy
     command: celery -A app.celery_app.celery_app worker -Q chatwoot_messages --loglevel=INFO --concurrency=4
 
@@ -113,8 +119,11 @@ services:
       ODRANID_DATABASE_URL: ${ODRANID_DATABASE_URL:-postgresql://odranid:odranid@postgres:5432/odranid}
       ODRANID_CELERY_BROKER_URL: redis://dragonfly:6379/0
       ODRANID_CELERY_RESULT_BACKEND: redis://dragonfly:6379/1
+      ODRANID_TYPESENSE_HOST: ${ODRANID_TYPESENSE_HOST:-typesense}
     depends_on:
       dragonfly:
+        condition: service_healthy
+      typesense:
         condition: service_healthy
     command: celery -A app.celery_app.celery_app beat --loglevel=INFO
 
