@@ -191,7 +191,17 @@ class TypesenseCatalogSearch:
 
         params = build_search_params(request, query_embedding)
         try:
-            payload = self.client.collections[self.collection].documents.search(params)
+            if query_embedding is not None:
+                # Vector queries with 1536 dimensions exceed Typesense's GET
+                # query-string limit through documents.search; multi_search
+                # sends the same search params as a POST body.
+                payload = self.client.multi_search.perform(
+                    {"searches": [{"collection": self.collection, **params}]},
+                    {},
+                )
+                payload = (payload.get("results") or [{}])[0]
+            else:
+                payload = self.client.collections[self.collection].documents.search(params)
         except Exception as exc:
             raise TypesenseSearchError(f"Typesense search failed: {exc}") from exc
 

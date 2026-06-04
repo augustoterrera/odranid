@@ -102,6 +102,29 @@ class FakeClient:
         return {"catalog_products": self._col}
 
 
+class FakeMultiSearch:
+    def __init__(self, payload):
+        self.payload = payload
+        self.last_search_queries = None
+        self.last_common_params = None
+
+    def perform(self, search_queries, common_params):
+        self.last_search_queries = search_queries
+        self.last_common_params = common_params
+        return {"results": [self.payload]}
+
+
+class FakeHybridClient(FakeClient):
+    def __init__(self, payload):
+        super().__init__(payload)
+        self.multi_search = FakeMultiSearch(payload)
+
+
+class FakeEmbedder:
+    def embed_many(self, texts):
+        return [[0.1, 0.2, 0.3] for _ in texts]
+
+
 class SearchTests(unittest.TestCase):
     def test_search_returns_topn_and_tags_alternatives(self) -> None:
         payload = {
@@ -123,6 +146,27 @@ class SearchTests(unittest.TestCase):
         self.assertFalse(response.used_relaxation)
         self.assertFalse(response.hits[0].is_alternative)  # exact espesor 3
         self.assertTrue(response.hits[1].is_alternative)   # espesor 2 -> alternative
+
+    def test_hybrid_search_uses_multi_search_post_body(self) -> None:
+        payload = {
+            "found": 1,
+            "hits": [
+                {"document": {"id": "1", "title": "Piso moneda 3mm", "rubro": "pisos", "in_stock": True,
+                              "floor_design": "moneda", "espesor_mm": 3, "ancho_m": 1.0, "content": "goma"},
+                 "vector_distance": 0.1},
+            ],
+        }
+        client = FakeHybridClient(payload)
+        engine = TypesenseCatalogSearch(client=client, embedder=FakeEmbedder(), collection="catalog_products")
+        request = SearchRequest(query="piso moneda 3mm", filters=ProductFilters(rubro="pisos"), limit=5)
+
+        response = engine.search(request)
+
+        self.assertEqual(len(response.hits), 1)
+        search = client.multi_search.last_search_queries["searches"][0]
+        self.assertEqual(search["collection"], "catalog_products")
+        self.assertIn("vector_query", search)
+        self.assertEqual(client.multi_search.last_common_params, {})
 
 
 if __name__ == "__main__":
