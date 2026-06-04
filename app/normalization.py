@@ -6,6 +6,7 @@ import unicodedata
 from collections.abc import Iterable
 from typing import Any
 
+from .domain_synonyms import DEFAULT_FLOOR, FLOOR_DESIGN_RULES
 from .models import ProductDocument, ProductSpecs
 
 
@@ -192,19 +193,10 @@ def floor_taxonomy(product: dict[str, Any], attrs: dict[str, Any]) -> tuple[str 
     text = norm_text(" ".join([product.get("name", ""), product.get("slug", ""), clean_description(product.get("description", ""))]))
     design_attr = norm_text(attr_value(attrs, ["nombre_del_diseno", "textura"]) or "")
     combined = f"{text} {design_attr}"
-    if has_any(combined, ["simil madera", "madera"]):
-        return "diseno", "simil_madera"
-    if "vinilico" in combined:
-        return "diseno", "vinilico"
-    if "semilla melon" in combined:
-        return "diseno", "semilla_melon"
-    if "semilla" in combined:
-        return "diseno", "semilla"
-    if "moneda" in combined:
-        return "diseno", "moneda"
-    if has_any(combined, ["rayado", "rayada", "estriado"]):
-        return "diseno", "rayado"
-    return "liso", None
+    for keywords, floor_kind, floor_design in FLOOR_DESIGN_RULES:
+        if has_any(combined, keywords):
+            return floor_kind, floor_design
+    return DEFAULT_FLOOR
 
 
 def extract_specs(product: dict[str, Any], attrs: dict[str, Any]) -> ProductSpecs:
