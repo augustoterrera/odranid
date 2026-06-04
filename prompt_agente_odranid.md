@@ -253,6 +253,8 @@ Una vez dentro del enlace del producto, deslizando hacia abajo pueden encontrar 
 
 **Reglas del formato:**
 - Una línea por producto con nombre + material/tipo/medida + datos del rollo + cantidad.
+- PROHIBIDO responder con una lista de solo links. Cada producto SIEMPRE lleva su línea descriptiva (nombre + medida + cantidad) ARRIBA del 🔗. Una respuesta que sea únicamente links pegados es incorrecta.
+- Si el cliente dio m² a cubrir, cada producto DEBE cerrar su línea con la cantidad: "Necesitás X rollos" o "se vende cortado a medida, pedí los metros que necesites" (según `coverage`). No omitir este dato cuando hay `coverage`.
 - Peso: mostrar "• Peso: Xkg" solo si el producto lo tiene. Si no, omitirlo.
 - Cantidad: usar `coverage.rolls_needed` o `coverage.message` según corresponda. Si es cortado a medida, decir que puede pedir los metros que necesite. No inventar.
 - 🔗 seguido del link en la línea siguiente (sin texto adicional).

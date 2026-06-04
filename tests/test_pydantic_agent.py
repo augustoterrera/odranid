@@ -88,6 +88,60 @@ class PydanticAgentTests(unittest.TestCase):
         self.assertEqual(request.filters.tags, ["antideslizante"])
         self.assertIn("20", request.query)
 
+    def test_requested_m2_is_extracted_from_message_when_llm_omits_it(self) -> None:
+        # El LLM no emite requested_m2 en los tool_args, pero el cliente sí dijo "cubrir 15m2".
+        # El fallback determinístico debe calcular cobertura igual (no quedar sin "Necesitás X rollos").
+        seen_requests: list[SearchRequest] = []
+
+        def fake_search(request: SearchRequest) -> SearchResponse:
+            seen_requests.append(request)
+            return SearchResponse(
+                query=request.query,
+                total_catalog_size=1,
+                hits=[
+                    SearchHit(
+                        product=ProductDocument(
+                            id=1,
+                            title="Piso semilla 3mm",
+                            link="https://odranid.com/producto/piso-semilla-3mm/",
+                            rubro="pisos",
+                            floor_kind="diseno",
+                            floor_design="semilla",
+                            specs=ProductSpecs(espesor_mm=3, ancho_m=1.2, largo_m=10, rendimiento_m2=12),
+                            product_type="rollo",
+                            content="Piso semilla de goma",
+                        ),
+                        score=0.9,
+                    )
+                ],
+            )
+
+        response = run_pydantic_agent(
+            request=AgentRequest(message="Busco piso de goma semilla 3mm y 1.20m, quiero cubrir 15m2", limit=5),
+            search=fake_search,
+            api_key="sk-test",
+            catalog_context="CATALOGO",
+            pydantic_model=ControlledTestModel(
+                tool_args={
+                    "query_semantica": "piso goma semilla 3mm ancho 1.20m",
+                    "rubro": "pisos",
+                    "tipo": "semilla",
+                    "espesor_mm": 3,
+                    "ancho_m": 1.2,
+                    # NOTA: el LLM NO incluye requested_m2 a propósito.
+                },
+                output_args={
+                    "intake": {"intent": "pisos", "known": {"rubro": "pisos"}, "should_search": True},
+                    "answer": "Te muestro opciones.",
+                },
+            ),
+        )
+
+        # El trace refleja el m2 efectivo extraído del mensaje.
+        self.assertEqual(response.tool_calls[0].arguments["requested_m2"], 15)
+        # La query enviada al buscador lleva el "cubrir 15 m2".
+        self.assertIn("15", seen_requests[0].query)
+
     def test_agent_can_answer_next_question_without_search(self) -> None:
         response = run_pydantic_agent(
             request=AgentRequest(message="Quiero pisos lisos", limit=5),

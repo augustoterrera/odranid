@@ -15,7 +15,7 @@ from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
 from .catalog_helpers import AgentError, build_system_prompt, canonical_product_link, clamp_int, compact_search_response
-from ..coverage import calculate_coverage
+from ..coverage import calculate_coverage, extract_requested_m2
 from ..models import (
     AgentMessage,
     AgentRequest,
@@ -42,6 +42,7 @@ class OdranidAgentDeps:
     search: SearchCallable
     default_limit: int
     max_limit: int
+    latest_message: str = ""
     tool_calls: list[AgentToolTrace] = field(default_factory=list)
     search_responses: list[SearchResponse] = field(default_factory=list)
 
@@ -183,7 +184,9 @@ def run_pydantic_agent(
         prompt_file = Path("prompt_agente_odranid.md")
 
     configure_logfire()
-    deps = OdranidAgentDeps(search=search, default_limit=request.limit, max_limit=request.limit)
+    deps = OdranidAgentDeps(
+        search=search, default_limit=request.limit, max_limit=request.limit, latest_message=request.message
+    )
     agent = build_agent(
         model=pydantic_model or build_openai_model(model, api_key),
         system_prompt=build_pydantic_system_prompt(prompt_file, catalog_context),
@@ -243,11 +246,18 @@ def build_agent(model: Model, system_prompt: str) -> Agent[OdranidAgentDeps, Odr
             color=color,
             tags=tags or [],
         )
-        query = semantic_query_with_requested_m2(query_semantica, requested_m2)
+        # No confiar solo en que el LLM emita requested_m2: si el cliente mencionó m² a cubrir
+        # (en este mensaje o en la query semántica), extraerlo de forma determinística para que
+        # la cobertura SIEMPRE se calcule. Así no quedan respuestas sin "Necesitás X rollos".
+        effective_m2 = requested_m2
+        if effective_m2 is None:
+            effective_m2 = extract_requested_m2(" ".join(filter(None, [ctx.deps.latest_message, query_semantica])))
+
+        query = semantic_query_with_requested_m2(query_semantica, effective_m2)
         search_request = SearchRequest(query=query, filters=filters, limit=safe_limit, relax_filters=True)
         response = ctx.deps.search(search_request)
-        if requested_m2 is not None:
-            apply_requested_coverage(response, requested_m2)
+        if effective_m2 is not None:
+            apply_requested_coverage(response, effective_m2)
 
         arguments = {
             "query_semantica": query_semantica,
@@ -260,7 +270,7 @@ def build_agent(model: Model, system_prompt: str) -> Agent[OdranidAgentDeps, Odr
             "material": material,
             "color": color,
             "tags": tags or [],
-            "requested_m2": requested_m2,
+            "requested_m2": effective_m2,
             "limit": safe_limit,
         }
         ctx.deps.tool_calls.append(
