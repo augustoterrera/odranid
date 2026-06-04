@@ -115,9 +115,8 @@ def build_agent_response_for_pending_messages(
     agent_message = apply_pending_slot_to_message(user_content, active_state)
     agent_history = [*history, *history_from_state(active_state)]
 
-    # LLM-only pipeline: no deterministic keyword interception. Every message
-    # is handled by the Agno team (RequirementsAgent -> CatalogAgent), which
-    # answers institutional/conversational from its prompt or runs a search.
+    # Single-agent pipeline: PydanticAI handles the message once and returns
+    # answer, intake, and tool call traces. No duplicated intake or split agents.
     agent_response = run_agent(
         AgentRequest(
             message=agent_message,
