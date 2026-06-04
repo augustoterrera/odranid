@@ -10,7 +10,7 @@ celery_app = Celery(
     "odranid",
     broker=settings.celery_broker_url,
     backend=settings.celery_result_backend,
-    include=["app.tasks.chatwoot_tasks"],
+    include=["app.tasks.chatwoot_tasks", "app.tasks.catalog_tasks"],
 )
 
 celery_app.conf.update(
@@ -27,6 +27,7 @@ celery_app.conf.update(
         "app.tasks.chatwoot_tasks.requeue_stuck_conversation_jobs": {"queue": "chatwoot_messages"},
         "app.tasks.chatwoot_tasks.dispatch_pending_outbox_messages": {"queue": "chatwoot_outbound"},
         "app.tasks.chatwoot_tasks.cleanup_expired_locks": {"queue": "chatwoot_messages"},
+        "app.tasks.catalog_tasks.sync_typesense_catalog": {"queue": "chatwoot_messages"},
     },
     beat_schedule={
         "retry-stale-processing-jobs": {
@@ -44,6 +45,10 @@ celery_app.conf.update(
         "cleanup-expired-locks": {
             "task": "app.tasks.chatwoot_tasks.cleanup_expired_locks",
             "schedule": crontab(minute="*/15"),
+        },
+        "sync-typesense-catalog": {
+            "task": "app.tasks.catalog_tasks.sync_typesense_catalog",
+            "schedule": crontab(minute=f"*/{settings.typesense_sync_minutes}"),
         },
     },
 )

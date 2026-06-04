@@ -24,7 +24,7 @@ from .chatwoot_service import chatwoot_event_key, persist_incoming_chatwoot_even
 from .config import settings
 from .coverage import enrich_search_response
 from .db_search import DatabaseCatalogSearch, DatabaseSearchError
-from .embeddings import OpenAIEmbeddingClient, chunked
+from .embeddings import OpenAIEmbeddingClient
 from .models import (
     AgentRequest,
     AgentResponse,
@@ -39,8 +39,8 @@ from .normalization import extract_woocommerce_products, normalize_product
 from .rag_precontext import build_rag_precontext
 from .retrieval import CatalogSearch
 from .typesense_client import build_typesense_client
-from .typesense_index import sync_collection
 from .typesense_search import TypesenseCatalogSearch
+from .typesense_sync import TypesenseSyncError, run_typesense_sync
 from .woocommerce import build_client_from_settings
 
 app = FastAPI(title=settings.app_name)
@@ -341,33 +341,11 @@ def fetch_woocommerce() -> dict[str, object]:
 
 @app.post("/admin/typesense-sync")
 def typesense_sync() -> dict[str, object]:
-    """Build/refresh the Typesense index from the normalized catalog.
-
-    Generates embeddings for the same content indexed in Postgres so the
-    hybrid (keyword + vector) search has vectors to rank with.
-    """
-    if not settings.typesense_api_key:
-        raise HTTPException(status_code=503, detail="ODRANID_TYPESENSE_API_KEY is required")
-
-    load_catalog(settings.catalog_file)
-    documents = list(catalog)
-    embeddings_by_id: dict[int, list[float] | None] = {}
-    if settings.openai_api_key:
-        embedder = OpenAIEmbeddingClient(settings.openai_api_key, settings.embedding_model)
-        for batch in chunked(documents, 64):
-            vectors = embedder.embed_many([document.content for document in batch])
-            for document, vector in zip(batch, vectors, strict=True):
-                embeddings_by_id[document.id] = vector
-
-    client = build_typesense_client()
-    indexed = sync_collection(
-        client,
-        settings.typesense_collection,
-        documents,
-        embeddings_by_id,
-        recreate=True,
-    )
-    return {"ok": True, "indexed": indexed, "embeddings": len(embeddings_by_id)}
+    """Full rebuild of the Typesense index from the normalized catalog."""
+    try:
+        return run_typesense_sync(recreate=True)
+    except TypesenseSyncError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 def configure_search(force_local_reload: bool = False) -> None:
