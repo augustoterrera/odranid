@@ -116,6 +116,61 @@ class PydanticAgentTests(unittest.TestCase):
         self.assertFalse(response.intake.should_search)
         self.assertEqual(response.intake.missing, ["espesor_mm", "ancho_m", "requested_m2"])
 
+    def test_agent_removes_hallucinated_product_and_link_from_tool_backed_answer(self) -> None:
+        def fake_search(request: SearchRequest) -> SearchResponse:
+            return SearchResponse(
+                query=request.query,
+                total_catalog_size=1,
+                hits=[
+                    SearchHit(
+                        product=ProductDocument(
+                            id=1,
+                            title="Piso moneda 3mm",
+                            link="https://odranid.com/producto/piso-moneda-3mm/",
+                            rubro="pisos",
+                            floor_kind="diseno",
+                            floor_design="moneda",
+                            specs=ProductSpecs(espesor_mm=3, ancho_m=1),
+                            content="Piso moneda de goma",
+                        ),
+                        score=0.9,
+                    )
+                ],
+            )
+
+        response = run_pydantic_agent(
+            request=AgentRequest(message="Necesito piso moneda", limit=5),
+            search=fake_search,
+            api_key="sk-test",
+            catalog_context="CATALOGO",
+            pydantic_model=ControlledTestModel(
+                tool_args={
+                    "query_semantica": "piso moneda goma",
+                    "rubro": "pisos",
+                    "tipo": "moneda",
+                },
+                output_args={
+                    "intake": {"intent": "pisos", "known": {"rubro": "pisos"}, "should_search": True},
+                    "answer": "\n".join(
+                        [
+                            "Te muestro estas opciones:",
+                            "",
+                            "1. Piso moneda 3mm",
+                            "[Ver producto](https://odranid.com/producto/piso-moneda-3mm/)",
+                            "",
+                            "2. Piso inventado premium",
+                            "https://odranid.com.ar/producto/no-existe/",
+                        ]
+                    ),
+                },
+            ),
+        )
+
+        self.assertIn("Piso moneda 3mm", response.answer)
+        self.assertIn("🔗 https://odranid.com.ar/producto/piso-moneda-3mm/", response.answer)
+        self.assertNotIn("Piso inventado", response.answer)
+        self.assertNotIn("no-existe", response.answer)
+
 
 class ControlledTestModel(TestModel):
     def __init__(self, *, tool_args: dict[str, object], output_args: dict[str, object]) -> None:

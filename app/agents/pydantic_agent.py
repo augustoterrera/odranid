@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -12,7 +13,7 @@ from pydantic_ai.models import Model
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
-from ..agent import AgentError, build_system_prompt, clamp_int, compact_search_response
+from ..agent import AgentError, build_system_prompt, canonical_product_link, clamp_int, compact_search_response
 from ..coverage import calculate_coverage
 from ..models import (
     AgentMessage,
@@ -81,11 +82,12 @@ def run_pydantic_agent(
         raise AgentError(f"PydanticAI agent run failed: {exc}") from exc
 
     output = result.output
-    if not output.answer.strip():
+    safe_answer = guard_agent_answer(output.answer, deps.search_responses)
+    if not safe_answer.strip():
         raise AgentError("PydanticAI agent response did not include final text")
 
     return AgentResponse(
-        answer=output.answer.strip(),
+        answer=safe_answer,
         tool_calls=deps.tool_calls,
         intake=output.intake,
     )
@@ -244,3 +246,85 @@ def apply_requested_coverage(response: SearchResponse, requested_m2: float) -> N
     for hit in response.hits:
         hit.coverage = calculate_coverage(hit.product, requested_m2)
     response.requested_m2 = requested_m2
+
+
+def guard_agent_answer(answer: str, search_responses: list[SearchResponse]) -> str:
+    if not search_responses:
+        return answer.strip()
+
+    allowed = allowed_catalog_items(search_responses)
+    lines: list[str] = []
+    for raw_line in answer.splitlines():
+        line, had_disallowed_link = format_allowed_links_for_whatsapp(raw_line, allowed["links"])
+        if had_disallowed_link:
+            continue
+        if looks_like_product_line(line) and not mentions_allowed_product(line, allowed["titles"]):
+            continue
+        lines.append(line.rstrip())
+
+    return compact_answer_lines(lines)
+
+
+def allowed_catalog_items(search_responses: list[SearchResponse]) -> dict[str, set[str]]:
+    links: set[str] = set()
+    titles: set[str] = set()
+    for response in search_responses:
+        for hit in response.hits:
+            title = hit.product.title.strip()
+            if title:
+                titles.add(normalize_answer_text(title))
+            link = canonical_product_link(hit.product.link)
+            if link:
+                links.add(link)
+    return {"links": links, "titles": titles}
+
+
+def format_allowed_links_for_whatsapp(line: str, allowed_links: set[str]) -> tuple[str, bool]:
+    had_disallowed_link = False
+
+    def replace_markdown_link(match: re.Match[str]) -> str:
+        nonlocal had_disallowed_link
+        label = match.group("label").strip()
+        link = canonical_product_link(match.group("url").strip())
+        if link not in allowed_links:
+            had_disallowed_link = True
+            return ""
+        return f"{label}\n🔗 {link}"
+
+    line = re.sub(r"\[(?P<label>[^\]]+)\]\((?P<url>https?://[^)]+)\)", replace_markdown_link, line)
+
+    def replace_bare_link(match: re.Match[str]) -> str:
+        nonlocal had_disallowed_link
+        link = canonical_product_link(match.group(0).rstrip(".,)"))
+        if link not in allowed_links:
+            had_disallowed_link = True
+            return ""
+        return f"🔗 {link}"
+
+    line = re.sub(r"https?://\S+", replace_bare_link, line)
+    return line.strip(), had_disallowed_link
+
+
+def looks_like_product_line(line: str) -> bool:
+    return bool(re.match(r"^\s*(?:\d+[\).\s]|[-*]\s+)", line))
+
+
+def mentions_allowed_product(line: str, allowed_titles: set[str]) -> bool:
+    normalized = normalize_answer_text(line)
+    return any(title and title in normalized for title in allowed_titles)
+
+
+def normalize_answer_text(value: str) -> str:
+    return re.sub(r"\s+", " ", value.casefold()).strip()
+
+
+def compact_answer_lines(lines: list[str]) -> str:
+    compacted: list[str] = []
+    previous_blank = False
+    for line in lines:
+        blank = not line.strip()
+        if blank and previous_blank:
+            continue
+        compacted.append(line)
+        previous_blank = blank
+    return "\n".join(compacted).strip()
