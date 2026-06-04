@@ -79,8 +79,14 @@ def build_sort_by(filters: ProductFilters) -> str:
     return ", ".join(parts)
 
 
+def candidate_pool_size(limit: int) -> int:
+    # Traemos un pool amplio para re-rankear en Python (exactos primero), porque el
+    # _eval de Typesense no garantiza que los matches exactos queden arriba.
+    return min(MAX_CANDIDATES, max(limit * 5, 25))
+
+
 def build_search_params(request: SearchRequest, query_embedding: list[float] | None) -> dict[str, Any]:
-    candidates = min(max(request.limit, 1), MAX_CANDIDATES)
+    candidates = candidate_pool_size(request.limit)
     params: dict[str, Any] = {
         "q": request.query.strip() or "*",
         "query_by": ",".join(QUERY_BY_FIELDS),
@@ -212,13 +218,23 @@ class TypesenseCatalogSearch:
         except Exception as exc:
             raise TypesenseSearchError(f"Typesense search failed: {exc}") from exc
 
-        hits = hits_from_response(payload, request.filters)
+        hits = rerank_exact_first(hits_from_response(payload, request.filters))
         total = int(payload.get("out_of") or payload.get("found") or 0)
         # Scoring model has no relaxation step: everything that survives the
-        # rubro/stock filter is returned, ranked, and tagged exact/alternative.
+        # rubro/stock filter is returned, ranked exact-first, tagged exact/alternative.
         return SearchResponse(
             query=request.query,
             hits=hits[: request.limit],
             used_relaxation=False,
             total_catalog_size=total,
         )
+
+
+def rerank_exact_first(hits: list[SearchHit]) -> list[SearchHit]:
+    """Exact matches (all requested attributes) first, then by number of matched
+    attributes, then by the engine's relevance score. Keeps the original engine
+    order as the final tie-breaker (stable sort)."""
+    return sorted(
+        hits,
+        key=lambda hit: (hit.is_alternative, -len(hit.matched_filters), -hit.score),
+    )
