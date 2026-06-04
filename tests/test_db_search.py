@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import unittest
 
-from app.db_search import DatabaseCatalogSearch, post_filter_specific_terms
+from app.db_search import DatabaseCatalogSearch
 from app.models import ProductDocument, ProductSpecs, SearchHit
+from app.search_common import post_filter_specific_terms
 
 
 class DbSearchTests(unittest.TestCase):

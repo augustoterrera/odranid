@@ -4,9 +4,9 @@ import math
 import re
 from collections import Counter
 
-from .db_search import post_filter_specific_terms
 from .models import ProductDocument, ProductFilters, SearchHit, SearchRequest, SearchResponse
 from .normalization import norm_text
+from .search_common import post_filter_specific_terms
 
 
 FILTER_ORDER = [
