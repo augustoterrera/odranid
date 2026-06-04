@@ -16,6 +16,8 @@ dependencies = [
     "python-multipart==0.0.30",
     "redis==6.4.0",
     "uvicorn[standard]==0.48.0",
+    "pydantic-ai==1.105.0",
+    "logfire==4.35.0",
 ]
 
 [dependency-groups]
