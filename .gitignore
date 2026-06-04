@@ -3,6 +3,10 @@
 !.env.example
 .cache/
 reports/
+# Datos pesados / fixtures de dev: nunca en git ni en producción.
+data/
+productos.json
+sheet.json
 __pycache__/
 *.pyc
 *.py[cod]

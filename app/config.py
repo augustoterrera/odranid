@@ -11,6 +11,9 @@ class Settings(BaseSettings):
     catalog_file: Path = Path("productos.json")
     agent_prompt_file: Path = Path("prompt_agente_odranid.md")
     context_cache_file: Path = Path("/tmp/odranid_catalog_context.txt")
+    # TTL del contexto de catálogo. Evita recalcular las facetas de Postgres (~3s)
+    # en cada mensaje; se invalida al sincronizar/recargar el catálogo.
+    catalog_context_ttl_seconds: int = 300
     woocommerce_base_url: str = "https://odranid.com.ar"
     woocommerce_per_page: int = 100
     woocommerce_max_pages: int = 50
@@ -21,6 +24,9 @@ class Settings(BaseSettings):
     chatwoot_api_access_token: str | None = None
     chatwoot_webhook_secret: str | None = None
     chatwoot_webhook_timestamp_tolerance_seconds: int = 300
+    # En producción poner en True: si no hay webhook secret, el arranque aborta en vez
+    # de aceptar cualquier POST sin firmar. En dev local queda False por comodidad.
+    require_webhook_secret: bool = False
     chatwoot_auto_reply: bool = True
     chatwoot_agent_limit: int = 5
     chatwoot_history_limit: int = 16
@@ -56,6 +62,10 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("OPENAI_API_KEY", "ODRANID_OPENAI_API_KEY"),
     )
     vector_top_k: int = 50
+
+    # Token para los endpoints /admin/*. Si está vacío, admin queda DESHABILITADO
+    # (fail-closed): los endpoints responden 503. En producción es obligatorio.
+    admin_api_token: str | None = None
 
     model_config = SettingsConfigDict(env_file=".env", env_prefix="ODRANID_", extra="ignore")
 

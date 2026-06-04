@@ -1,14 +1,15 @@
 from __future__ import annotations
 
+import hmac
 import json
 import logging
 import re
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 
 from .agents.catalog_helpers import AgentError
-from .catalog_context import CatalogContextCache
+from .catalog_context import CatalogContextCache, TTLStringCache
 from .chat_memory import (
     ChatMemoryError,
     ChatMemoryStore,
@@ -51,13 +52,46 @@ search_engine: CatalogSearch | None = None
 db_search_engine: DatabaseCatalogSearch | None = None
 typesense_search_engine: TypesenseCatalogSearch | None = None
 context_cache = CatalogContextCache(settings.context_cache_file)
+# Cachea el string del contexto de catálogo con TTL para no pegarle a Postgres
+# (facetas, ~3s) en cada mensaje. Se invalida al recargar/sincronizar el catálogo.
+catalog_context_ttl = TTLStringCache(settings.catalog_context_ttl_seconds)
 chat_memory_store: ChatMemoryStore | None = None
 
 
 @app.on_event("startup")
 def startup() -> None:
+    enforce_webhook_secret_policy()
     configure_search()
     configure_chat_memory()
+
+
+def enforce_webhook_secret_policy() -> None:
+    """Producción no debería aceptar webhooks sin firmar. Si se exige el secret y
+    falta, abortar el arranque; si no se exige pero falta, avisar fuerte."""
+    if settings.chatwoot_webhook_secret:
+        return
+    if settings.require_webhook_secret:
+        raise RuntimeError(
+            "ODRANID_REQUIRE_WEBHOOK_SECRET=true pero falta ODRANID_CHATWOOT_WEBHOOK_SECRET: "
+            "el webhook aceptaría cualquier POST sin firmar. Abortando arranque inseguro."
+        )
+    logger.warning(
+        "Webhook de Chatwoot SIN secret configurado: acepta cualquier POST (inseguro para "
+        "producción). Configurá ODRANID_CHATWOOT_WEBHOOK_SECRET."
+    )
+
+
+def require_admin_token(x_admin_token: str | None = Header(default=None)) -> None:
+    """Guard de los endpoints /admin/*. Fail-closed: sin token configurado, admin
+    queda deshabilitado (503); token ausente o incorrecto → 401."""
+    token = settings.admin_api_token
+    if not token:
+        raise HTTPException(
+            status_code=503,
+            detail="Admin deshabilitado: configurá ODRANID_ADMIN_API_TOKEN para usar /admin/*.",
+        )
+    if not x_admin_token or not hmac.compare_digest(x_admin_token, token):
+        raise HTTPException(status_code=401, detail="Token admin inválido o ausente.")
 
 
 @app.get("/health")
@@ -305,6 +339,10 @@ def search(request: SearchRequest) -> SearchResponse:
 
 
 def current_catalog_context() -> str:
+    return catalog_context_ttl.get(_load_catalog_context)
+
+
+def _load_catalog_context() -> str:
     if db_search_engine is not None:
         try:
             return db_search_engine.catalog_context()
@@ -325,13 +363,14 @@ def perform_search(request: SearchRequest) -> SearchResponse:
     return enrich_search_response(search_engine.search(request))
 
 
-@app.post("/admin/reload")
+@app.post("/admin/reload", dependencies=[Depends(require_admin_token)])
 def reload_catalog() -> dict[str, object]:
     configure_search(force_local_reload=True)
+    catalog_context_ttl.invalidate()
     return health()
 
 
-@app.post("/admin/fetch-woocommerce")
+@app.post("/admin/fetch-woocommerce", dependencies=[Depends(require_admin_token)])
 def fetch_woocommerce() -> dict[str, object]:
     client = build_client_from_settings(settings)
     raw_products = client.fetch_products()
@@ -339,13 +378,15 @@ def fetch_woocommerce() -> dict[str, object]:
     return {"ok": True, "products": len(catalog)}
 
 
-@app.post("/admin/typesense-sync")
+@app.post("/admin/typesense-sync", dependencies=[Depends(require_admin_token)])
 def typesense_sync() -> dict[str, object]:
     """Full rebuild of the Typesense index from the normalized catalog."""
     try:
-        return run_typesense_sync(recreate=True)
+        result = run_typesense_sync(recreate=True)
     except TypesenseSyncError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+    catalog_context_ttl.invalidate()
+    return result
 
 
 def configure_search(force_local_reload: bool = False) -> None:
@@ -415,3 +456,4 @@ def load_raw_products(raw_products: list[dict]) -> None:
     catalog = normalized
     search_engine = CatalogSearch(catalog)
     context_cache.invalidate()
+    catalog_context_ttl.invalidate()

@@ -104,5 +104,52 @@ class MainFlowTests(unittest.TestCase):
         self.assertEqual(ctx.exception.status_code, 503)
 
 
+class AdminAuthTests(unittest.TestCase):
+    def test_admin_disabled_when_no_token_configured(self) -> None:
+        from fastapi import HTTPException
+
+        with patch.object(main.settings, "admin_api_token", None):
+            with self.assertRaises(HTTPException) as ctx:
+                main.require_admin_token(x_admin_token="lo-que-sea")
+        self.assertEqual(ctx.exception.status_code, 503)
+
+    def test_admin_rejects_wrong_or_missing_token(self) -> None:
+        from fastapi import HTTPException
+
+        with patch.object(main.settings, "admin_api_token", "secreto"):
+            with self.assertRaises(HTTPException) as ctx:
+                main.require_admin_token(x_admin_token="incorrecto")
+            self.assertEqual(ctx.exception.status_code, 401)
+            with self.assertRaises(HTTPException) as ctx2:
+                main.require_admin_token(x_admin_token=None)
+            self.assertEqual(ctx2.exception.status_code, 401)
+
+    def test_admin_accepts_correct_token(self) -> None:
+        with patch.object(main.settings, "admin_api_token", "secreto"):
+            self.assertIsNone(main.require_admin_token(x_admin_token="secreto"))
+
+
+class WebhookSecretPolicyTests(unittest.TestCase):
+    def test_aborts_startup_when_required_but_missing(self) -> None:
+        with patch.object(main.settings, "chatwoot_webhook_secret", None), patch.object(
+            main.settings, "require_webhook_secret", True
+        ):
+            with self.assertRaises(RuntimeError):
+                main.enforce_webhook_secret_policy()
+
+    def test_only_warns_when_not_required(self) -> None:
+        with patch.object(main.settings, "chatwoot_webhook_secret", None), patch.object(
+            main.settings, "require_webhook_secret", False
+        ):
+            # No debe lanzar; solo loguea un warning.
+            self.assertIsNone(main.enforce_webhook_secret_policy())
+
+    def test_ok_when_secret_present(self) -> None:
+        with patch.object(main.settings, "chatwoot_webhook_secret", "shh"), patch.object(
+            main.settings, "require_webhook_secret", True
+        ):
+            self.assertIsNone(main.enforce_webhook_secret_policy())
+
+
 if __name__ == "__main__":
     unittest.main()

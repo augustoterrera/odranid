@@ -1,9 +1,40 @@
 from __future__ import annotations
 
+import threading
+import time
 from collections import Counter, defaultdict
+from collections.abc import Callable
 from pathlib import Path
 
 from .models import ProductDocument
+
+
+class TTLStringCache:
+    """Cachea un string con expiración por tiempo. Thread-safe (la API corre con
+    varios workers/requests concurrentes). Solo cachea resultados exitosos: si el
+    loader lanza una excepción, no se guarda nada."""
+
+    def __init__(self, ttl_seconds: float, *, clock: Callable[[], float] = time.monotonic) -> None:
+        self._ttl = ttl_seconds
+        self._clock = clock
+        self._lock = threading.Lock()
+        self._value: str | None = None
+        self._expires_at: float = 0.0
+
+    def get(self, loader: Callable[[], str]) -> str:
+        with self._lock:
+            now = self._clock()
+            if self._value is not None and now < self._expires_at:
+                return self._value
+            value = loader()
+            self._value = value
+            self._expires_at = now + self._ttl
+            return value
+
+    def invalidate(self) -> None:
+        with self._lock:
+            self._value = None
+            self._expires_at = 0.0
 
 
 class CatalogContextCache:
