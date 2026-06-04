@@ -156,7 +156,7 @@ class PydanticAgentTests(unittest.TestCase):
                             "Te muestro estas opciones:",
                             "",
                             "1. Piso moneda 3mm",
-                            "[Ver producto](https://odranid.com/producto/piso-moneda-3mm/)",
+                            "🔗 [Ver producto](https://odranid.com/producto/piso-moneda-3mm/)",
                             "",
                             "2. Piso inventado premium",
                             "https://odranid.com.ar/producto/no-existe/",
@@ -168,8 +168,30 @@ class PydanticAgentTests(unittest.TestCase):
 
         self.assertIn("Piso moneda 3mm", response.answer)
         self.assertIn("🔗 https://odranid.com.ar/producto/piso-moneda-3mm/", response.answer)
+        self.assertNotIn("🔗 🔗", response.answer)
         self.assertNotIn("Piso inventado", response.answer)
         self.assertNotIn("no-existe", response.answer)
+
+    def test_agent_keeps_fixed_advisor_link_in_tool_backed_answer(self) -> None:
+        def fake_search(request: SearchRequest) -> SearchResponse:
+            return SearchResponse(query=request.query, total_catalog_size=0, hits=[])
+
+        response = run_pydantic_agent(
+            request=AgentRequest(message="pago efectivo tiene descuento?", limit=5),
+            search=fake_search,
+            api_key="sk-test",
+            catalog_context="CATALOGO",
+            pydantic_model=ControlledTestModel(
+                tool_args={"query_semantica": "consulta pago efectivo", "rubro": "general"},
+                output_args={
+                    "intake": {"intent": None, "known": {}, "should_search": False},
+                    "answer": "Para compras en efectivo contactá al asesor: 🔗 https://wa.me/5491125539459",
+                },
+            ),
+        )
+
+        self.assertIn("🔗 https://wa.me/5491125539459", response.answer)
+        self.assertNotIn("🔗 🔗", response.answer)
 
 
 class ControlledTestModel(TestModel):

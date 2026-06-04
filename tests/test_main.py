@@ -68,26 +68,28 @@ class MainFlowTests(unittest.TestCase):
         self.assertIn('"ancho_m": 2', context)
         self.assertIn("buscar_productos", context)
 
-    def test_run_agent_uses_odranid_team_with_precontext_when_configured(self) -> None:
+    def test_run_agent_uses_pydantic_agent_when_configured(self) -> None:
         seen: dict[str, object] = {}
 
-        def fake_run_team(request, search, api_key, context_builder, model, prompt_file):
+        def fake_run_pydantic_agent(request, search, api_key, catalog_context, model, prompt_file):
             seen["request"] = request
-            seen["context_builder"] = context_builder
+            seen["catalog_context"] = catalog_context
             seen["search"] = search
             seen["api_key"] = api_key
             seen["model"] = model
             seen["prompt_file"] = prompt_file
             return AgentResponse(answer="respuesta del agente")
 
-        with patch.object(main.settings, "openai_api_key", "sk-test"), patch(
-            "app.agents.odranid_team.run_team", side_effect=fake_run_team
+        with patch.object(main.settings, "openai_api_key", "sk-test"), patch.object(
+            main, "current_catalog_context", return_value="CATALOGO"
+        ), patch(
+            "app.agents.pydantic_agent.run_pydantic_agent", side_effect=fake_run_pydantic_agent
         ):
             response = main.run_agent(AgentRequest(message="Estoy buscando pisos con diseño para cubrir 7m2"))
 
         self.assertEqual(response.answer, "respuesta del agente")
         self.assertEqual(seen["api_key"], "sk-test")
-        self.assertTrue(callable(seen["context_builder"]))
+        self.assertEqual(seen["catalog_context"], "CATALOGO")
         self.assertIs(seen["search"], main.perform_search)
 
     def test_run_agent_requires_openai_key(self) -> None:

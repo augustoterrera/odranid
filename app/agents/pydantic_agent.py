@@ -56,6 +56,11 @@ Si no hace falta buscar, `answer` debe ser la respuesta final breve. Si falta in
 la `next_question`.
 """
 
+FIXED_SAFE_LINKS = {
+    "https://wa.me/5491125539459",
+    "https://maps.app.goo.gl/zMfBWeQwwPKFGBa89",
+}
+
 
 def run_pydantic_agent(
     request: AgentRequest,
@@ -183,7 +188,7 @@ def build_user_prompt(request: AgentRequest) -> str:
 
 
 def visible_history(history: list[AgentMessage]) -> list[AgentMessage]:
-    return [message for message in history if not message.content.startswith("Datos ya recopilados:")]
+    return history
 
 
 def product_filters_from_tool_args(
@@ -266,7 +271,7 @@ def guard_agent_answer(answer: str, search_responses: list[SearchResponse]) -> s
 
 
 def allowed_catalog_items(search_responses: list[SearchResponse]) -> dict[str, set[str]]:
-    links: set[str] = set()
+    links: set[str] = set(FIXED_SAFE_LINKS)
     titles: set[str] = set()
     for response in search_responses:
         for hit in response.hits:
@@ -302,6 +307,7 @@ def format_allowed_links_for_whatsapp(line: str, allowed_links: set[str]) -> tup
         return f"🔗 {link}"
 
     line = re.sub(r"https?://\S+", replace_bare_link, line)
+    line = line.replace("🔗 🔗", "🔗")
     return line.strip(), had_disallowed_link
 
 

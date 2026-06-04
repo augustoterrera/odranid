@@ -11,7 +11,6 @@ from .chat_memory import (
     ChatConversation,
     ChatMemoryError,
     ChatMemoryStore,
-    analyze_with_memory,
     apply_pending_slot_to_message,
     build_memory_state,
     history_from_state,
@@ -20,7 +19,7 @@ from .chat_memory import (
 )
 from .chatwoot import ChatwootMessageEvent
 from .config import settings
-from .models import AgentRequest, AgentResponse
+from .models import AgentRequest, AgentResponse, ProductIntakeResponse
 
 logger = logging.getLogger(__name__)
 
@@ -113,14 +112,8 @@ def build_agent_response_for_pending_messages(
     active_state = {} if reset_state else conversation.state
     history = [] if reset_state else store.recent_history(conversation.id, settings.chatwoot_history_limit)
 
-    intake = analyze_with_memory(
-        user_content, history, active_state,
-        api_key=str(settings.openai_api_key) if settings.openai_api_key else None,
-        model=settings.agent_model,
-    )
-    state = build_memory_state(active_state, intake, pending_slot_from_intake(intake))
     agent_message = apply_pending_slot_to_message(user_content, active_state)
-    agent_history = [*history, *history_from_state(state)]
+    agent_history = [*history, *history_from_state(active_state)]
 
     # LLM-only pipeline: no deterministic keyword interception. Every message
     # is handled by the Agno team (RequirementsAgent -> CatalogAgent), which
@@ -133,6 +126,8 @@ def build_agent_response_for_pending_messages(
         )
     )
 
+    intake = agent_response.intake or ProductIntakeResponse()
+    state = build_memory_state(active_state, intake, pending_slot_from_intake(intake))
     state["last_tool_calls"] = [trace.model_dump() for trace in agent_response.tool_calls]
     return agent_response, state
 

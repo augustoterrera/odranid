@@ -192,14 +192,14 @@ def run_agent(request: AgentRequest) -> AgentResponse:
 
 
 def run_openai_agent(request: AgentRequest) -> AgentResponse:
-    from .agents.odranid_team import run_team
+    from .agents.pydantic_agent import run_pydantic_agent
 
     try:
-        return run_team(
+        return run_pydantic_agent(
             request=request,
             search=perform_search,
             api_key=str(settings.openai_api_key),
-            context_builder=_build_context_with_intake,
+            catalog_context=current_catalog_context(),
             model=settings.agent_model,
             prompt_file=settings.agent_prompt_file,
         )

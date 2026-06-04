@@ -24,7 +24,7 @@ from app.chat_memory import (  # noqa: E402
 from app.chatwoot import chatwoot_message_role  # noqa: E402
 from app.config import settings  # noqa: E402
 from app.main import configure_search, run_agent  # noqa: E402
-from app.models import AgentMessage, AgentRequest  # noqa: E402
+from app.models import AgentMessage, AgentRequest, ProductIntakeResponse  # noqa: E402
 
 
 class ReplayError(RuntimeError):
@@ -234,12 +234,16 @@ def build_replay_turns(
 
 
 def replay_turn(turn: ReplayTurn, intake_only: bool) -> dict[str, Any]:
-    intake = analyze_with_memory(
-        turn.user_message, turn.history, turn.state_before,
-        api_key=str(settings.openai_api_key) if settings.openai_api_key else None,
-        model=settings.agent_model,
-    )
-    state_after = build_memory_state(turn.state_before, intake, pending_slot_from_intake(intake))
+    if intake_only:
+        intake = analyze_with_memory(
+            turn.user_message, turn.history, turn.state_before,
+            api_key=str(settings.openai_api_key) if settings.openai_api_key else None,
+            model=settings.agent_model,
+        )
+        state_after = build_memory_state(turn.state_before, intake, pending_slot_from_intake(intake))
+    else:
+        intake = ProductIntakeResponse()
+        state_after = turn.state_before
     record: dict[str, Any] = {
         "conversation_id": turn.conversation_id,
         "message_id": turn.message_id,
@@ -254,15 +258,18 @@ def replay_turn(turn: ReplayTurn, intake_only: bool) -> dict[str, Any]:
         return record
 
     try:
-        # LLM-only pipeline: every message goes through the Agno team. No policy
-        # interception or deterministic question shortcut.
+        # Cutover pipeline: the single PydanticAI agent returns both answer and intake.
         response = run_agent(
             AgentRequest(
                 message=apply_pending_slot_to_message(turn.user_message, turn.state_before),
-                history=[*turn.history, *history_from_state(state_after)],
+                history=[*turn.history, *history_from_state(turn.state_before)],
                 limit=settings.chatwoot_agent_limit,
             )
         )
+        intake = response.intake or ProductIntakeResponse()
+        state_after = build_memory_state(turn.state_before, intake, pending_slot_from_intake(intake))
+        record["intake"] = intake.model_dump()
+        record["state_after"] = state_after
         record["agent"] = {
             "answer": response.answer,
             "tool_calls": [trace.model_dump() for trace in response.tool_calls],
