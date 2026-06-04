@@ -112,7 +112,14 @@ def product_from_typesense_doc(doc: dict[str, Any]) -> ProductDocument:
         material=doc.get("material"),
         color=doc.get("color"),
         technical_tags=doc.get("technical_tags") or [],
-        specs=ProductSpecs(espesor_mm=doc.get("espesor_mm"), ancho_m=doc.get("ancho_m")),
+        specs=ProductSpecs(
+            espesor_mm=doc.get("espesor_mm"),
+            ancho_m=doc.get("ancho_m"),
+            largo_m=doc.get("largo_m"),
+            rendimiento_m2=doc.get("rendimiento_m2"),
+            diametro_mm=doc.get("diametro_mm"),
+            largo_manguera_m=doc.get("largo_manguera_m"),
+        ),
         content=doc.get("content") or "",
     )
 

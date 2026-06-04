@@ -27,7 +27,7 @@ def _doc(**overrides) -> ProductDocument:
         in_stock=True,
         link="https://odranid.com.ar/producto/piso-moneda/",
         technical_tags=["antideslizante"],
-        specs=ProductSpecs(espesor_mm=3, ancho_m=1.0),
+        specs=ProductSpecs(espesor_mm=3, ancho_m=1.0, largo_m=10, rendimiento_m2=12),
     )
     base.update(overrides)
     return ProductDocument(**base)
@@ -41,6 +41,9 @@ class TypesenseDocumentTests(unittest.TestCase):
         self.assertEqual(doc["floor_design"], "moneda")
         self.assertEqual(doc["espesor_mm"], 3)
         self.assertEqual(doc["ancho_m"], 1.0)
+        # largo_m y rendimiento_m2 son necesarios para que coverage calcule rollos.
+        self.assertEqual(doc["largo_m"], 10)
+        self.assertEqual(doc["rendimiento_m2"], 12)
         self.assertEqual(doc["embedding"], [0.1, 0.2])
 
     def test_null_optional_fields_are_dropped(self) -> None:
