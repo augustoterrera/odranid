@@ -1,0 +1,373 @@
+from __future__ import annotations
+
+import json
+import logging
+import re
+from pathlib import Path
+
+from fastapi import FastAPI, HTTPException, Request
+
+from .agent import AgentError
+from .catalog_context import CatalogContextCache
+from .chat_memory import (
+    ChatMemoryError,
+    ChatMemoryStore,
+    build_chat_memory_store_from_settings,
+)
+from .chatwoot import (
+    ChatwootError,
+    extract_message_event,
+    parse_chatwoot_payload,
+    verify_chatwoot_signature,
+)
+from .chatwoot_service import chatwoot_event_key, persist_incoming_chatwoot_event
+from .config import settings
+from .coverage import enrich_search_response
+from .db_search import DatabaseCatalogSearch, DatabaseSearchError
+from .embeddings import OpenAIEmbeddingClient
+from .models import (
+    AgentRequest,
+    AgentResponse,
+    ChatwootWebhookResponse,
+    ProductDocument,
+    ProductIntakeRequest,
+    ProductIntakeResponse,
+    SearchRequest,
+    SearchResponse,
+)
+from .normalization import extract_woocommerce_products, normalize_product
+from .rag_precontext import build_rag_precontext
+from .retrieval import CatalogSearch
+from .woocommerce import build_client_from_settings
+
+app = FastAPI(title=settings.app_name)
+logger = logging.getLogger(__name__)
+
+catalog: list[ProductDocument] = []
+search_engine: CatalogSearch | None = None
+db_search_engine: DatabaseCatalogSearch | None = None
+context_cache = CatalogContextCache(settings.context_cache_file)
+chat_memory_store: ChatMemoryStore | None = None
+
+
+@app.on_event("startup")
+def startup() -> None:
+    configure_search()
+    configure_chat_memory()
+
+
+@app.get("/health")
+def health() -> dict[str, object]:
+    return {
+        "ok": True,
+        "products": db_search_engine.count_products() if db_search_engine else len(catalog),
+        "search_backend": "database" if db_search_engine else "local",
+    }
+
+
+@app.get("/catalog/context")
+def catalog_context() -> dict[str, str]:
+    return {"system_context": current_catalog_context()}
+
+
+@app.post("/intake/analyze", response_model=ProductIntakeResponse)
+def intake_analyze(request: ProductIntakeRequest) -> ProductIntakeResponse:
+    return get_product_intake(request.query, request.history)
+
+
+@app.post("/agent/respond", response_model=AgentResponse)
+def agent_respond(request: AgentRequest) -> AgentResponse:
+    return run_agent(request)
+
+
+@app.get("/webhooks/chatwoot/health")
+def chatwoot_webhook_health() -> dict[str, object]:
+    return {
+        "ok": True,
+        "endpoint": "/webhooks/chatwoot",
+        "auto_reply": settings.chatwoot_auto_reply,
+        "has_base_url": bool(settings.chatwoot_base_url),
+        "has_account_id": settings.chatwoot_account_id is not None,
+        "has_api_access_token": bool(settings.chatwoot_api_access_token),
+        "has_webhook_secret": bool(settings.chatwoot_webhook_secret),
+        "has_openai": bool(settings.openai_api_key),
+        "memory_enabled": settings.chat_memory_enabled,
+        "has_memory_store": chat_memory_store is not None,
+        "history_limit": settings.chatwoot_history_limit,
+        "lock_seconds": settings.chatwoot_lock_seconds,
+        "search_backend": "database" if db_search_engine else "local",
+    }
+
+
+@app.post("/webhooks/chatwoot", response_model=ChatwootWebhookResponse)
+async def chatwoot_webhook(request: Request) -> ChatwootWebhookResponse:
+    raw_body = await request.body()
+    is_verified = verify_chatwoot_signature(
+        raw_body=raw_body,
+        secret=settings.chatwoot_webhook_secret,
+        signature=request.headers.get("x-chatwoot-signature"),
+        timestamp=request.headers.get("x-chatwoot-timestamp"),
+        tolerance_seconds=settings.chatwoot_webhook_timestamp_tolerance_seconds,
+    )
+    if not is_verified:
+        raise HTTPException(status_code=401, detail="Invalid Chatwoot webhook signature")
+
+    try:
+        payload = parse_chatwoot_payload(raw_body)
+        event, ignore_reason = extract_message_event(payload, settings.chatwoot_history_limit)
+    except ChatwootError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    if event is None:
+        return ChatwootWebhookResponse(
+            ok=True,
+            handled=False,
+            reason=ignore_reason,
+            event=str(payload.get("event") or ""),
+            message_id=payload.get("id"),
+        )
+
+    if chat_memory_store is None:
+        raise HTTPException(status_code=503, detail="Chat memory store is required for Chatwoot webhooks")
+
+    event_key = chatwoot_event_key(
+        {key.lower(): value for key, value in request.headers.items()},
+        event.conversation_id,
+        event.message_id,
+    )
+    try:
+        is_new, conversation, job_id = persist_incoming_chatwoot_event(chat_memory_store, event_key, event, payload)
+    except ChatMemoryError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    if not is_new:
+        return ChatwootWebhookResponse(
+            ok=True,
+            handled=False,
+            status="duplicate",
+            reason="duplicate_event",
+            event=event.event,
+            message_id=event.message_id,
+            conversation_id=event.conversation_id,
+        )
+
+    from .tasks.chatwoot_tasks import process_chatwoot_conversation, set_conversation_debounce
+
+    set_conversation_debounce(conversation.id)
+    reason = "queued_for_celery_processing"
+    try:
+        process_chatwoot_conversation.apply_async(
+            (str(conversation.id),),
+            queue="chatwoot_messages",
+            countdown=settings.chatwoot_debounce_seconds,
+        )
+    except Exception as exc:
+        reason = "queued_in_db_celery_dispatch_failed"
+        logger.exception(
+            "chatwoot_celery_enqueue_failed",
+            extra={"event_key": event_key, "conversation_id": conversation.id, "job_id": job_id, "error": str(exc)},
+        )
+    return ChatwootWebhookResponse(
+        ok=True,
+        handled=True,
+        status="queued",
+        reason=reason,
+        event=event.event,
+        message_id=event.message_id,
+        conversation_id=event.conversation_id,
+        job_id=job_id,
+    )
+
+
+def run_agent(request: AgentRequest) -> AgentResponse:
+    """LLM-only pipeline: every message goes through the Agno team.
+
+    There is no deterministic keyword interception or fallback. The
+    RequirementsAgent classifies intent and the CatalogAgent answers
+    (institutional/conversational from its prompt, or product search).
+    """
+    if not settings.openai_api_key:
+        raise HTTPException(status_code=503, detail="OPENAI_API_KEY is required for the agent")
+    return run_openai_agent(request)
+
+
+def run_openai_agent(request: AgentRequest) -> AgentResponse:
+    from .agents.odranid_team import run_team
+
+    try:
+        return run_team(
+            request=request,
+            search=perform_search,
+            api_key=str(settings.openai_api_key),
+            context_builder=_build_context_with_intake,
+            model=settings.agent_model,
+            prompt_file=settings.agent_prompt_file,
+        )
+    except (AgentError, DatabaseSearchError) as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+def _build_context_with_intake(request: AgentRequest, intake: ProductIntakeResponse) -> str:
+    """Build catalog context using the LLM-extracted intake, not the deterministic one."""
+    search_query = build_search_query(intake, request)
+    return "\n\n".join(
+        [
+            current_catalog_context(),
+            build_rag_precontext(
+                request=request,
+                search_query=search_query,
+                intake=intake,
+            ),
+        ]
+    )
+
+
+def current_catalog_context_for_request(request: AgentRequest) -> str:
+    intake = get_product_intake(request.message, request.history)
+    return _build_context_with_intake(request, intake)
+
+
+def current_agent_context(request: AgentRequest) -> str:
+    return current_catalog_context_for_request(request)
+
+
+def get_product_intake(query: str, history: list[AgentMessage]) -> ProductIntakeResponse:
+    """Analyze product intake with the LLM RequirementsAgent (LLM-only pipeline)."""
+    if not settings.openai_api_key:
+        raise HTTPException(status_code=503, detail="OPENAI_API_KEY is required for intake analysis")
+    from .agents.requirements_agent import analyze_requirements
+    return analyze_requirements(query, history, str(settings.openai_api_key), settings.agent_model)
+
+
+def build_search_query(intake: ProductIntakeResponse, request: AgentRequest) -> str:
+    """Build the pre-search query from the LLM-extracted state.
+
+    The LLM-extracted known dict is clean (corrections already applied), so we
+    build the query directly from it. When the intake carries no rubro, fall
+    back to the raw conversation text (no keyword parsing).
+    """
+    if intake.known and intake.known.get("rubro"):
+        from .chat_memory import known_to_natural_text
+        base = known_to_natural_text(intake.known)
+        if base:
+            return clean_agent_search_query(base)
+    return search_query_from_agent_request(request)
+
+
+def search_query_from_agent_request(request: AgentRequest) -> str:
+    """Build a raw search query from the conversation text, no keyword parsing."""
+    user_messages = [message.content for message in request.history if message.role == "user"]
+    structured_context = [message for message in user_messages if message.startswith("Datos ya recopilados:")]
+    if structured_context:
+        query = f"{structured_context[-1]} {request.message}"
+    else:
+        parts = [*user_messages[-4:], request.message]
+        query = " ".join(part.strip() for part in parts if part.strip())
+    return clean_agent_search_query(query or request.message)
+
+
+def clean_agent_search_query(query: str) -> str:
+    query = re.sub(r"https?://\S+", " ", query)
+    query = re.sub(r"\*?Odranid\*?!?", "Odranid", query, flags=re.IGNORECASE)
+    query = re.sub(r"\bHola\s+Odranid\b", " ", query, flags=re.IGNORECASE)
+    query = re.sub(r"\bVengo de la tienda online\b", " ", query, flags=re.IGNORECASE)
+    query = re.sub(r"\by quisiera saber\b", " ", query, flags=re.IGNORECASE)
+    query = re.sub(r"\s+", " ", query).strip()
+    return query
+
+
+def configure_chat_memory() -> None:
+    global chat_memory_store
+    if not settings.chat_memory_enabled:
+        chat_memory_store = None
+        return
+    chat_memory_store = build_chat_memory_store_from_settings(settings)
+
+
+@app.post("/search", response_model=SearchResponse)
+def search(request: SearchRequest) -> SearchResponse:
+    try:
+        return perform_search(request)
+    except DatabaseSearchError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+def current_catalog_context() -> str:
+    if db_search_engine is not None:
+        try:
+            return db_search_engine.catalog_context()
+        except DatabaseSearchError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return context_cache.get(catalog)
+
+
+def perform_search(request: SearchRequest) -> SearchResponse:
+    if db_search_engine is not None:
+        return enrich_search_response(db_search_engine.search(request))
+
+    if search_engine is None:
+        raise HTTPException(status_code=503, detail="Catalog not loaded")
+    return enrich_search_response(search_engine.search(request))
+
+
+@app.post("/admin/reload")
+def reload_catalog() -> dict[str, object]:
+    configure_search(force_local_reload=True)
+    return health()
+
+
+@app.post("/admin/fetch-woocommerce")
+def fetch_woocommerce() -> dict[str, object]:
+    client = build_client_from_settings(settings)
+    raw_products = client.fetch_products()
+    load_raw_products(raw_products)
+    return {"ok": True, "products": len(catalog)}
+
+
+def configure_search(force_local_reload: bool = False) -> None:
+    global db_search_engine
+    if not force_local_reload and settings.openai_api_key and settings.database_url:
+        db_search_engine = DatabaseCatalogSearch(
+            embedder=OpenAIEmbeddingClient(settings.openai_api_key, settings.embedding_model),
+            postgres_url=settings.database_url,
+        )
+        return
+
+    db_search_engine = None
+    load_catalog(settings.catalog_file)
+
+
+def load_catalog(path: Path | None = None) -> None:
+    if path is not None and path.exists():
+        load_catalog_file(path)
+        return
+
+    client = build_client_from_settings(settings)
+    load_raw_products(client.fetch_products())
+
+
+def load_catalog_file(path: Path) -> None:
+    global catalog, search_engine
+    if not path.exists():
+        catalog = []
+        search_engine = CatalogSearch(catalog)
+        return
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    raw_products = extract_woocommerce_products(payload)
+    load_raw_products(raw_products)
+
+
+def load_raw_products(raw_products: list[dict]) -> None:
+    global catalog, search_engine
+    normalized = []
+    for product in raw_products:
+        try:
+            normalized.append(normalize_product(product))
+        except Exception as exc:
+            product_id = product.get("id") or product.get("name") or "unknown"
+            raise RuntimeError(f"Could not normalize product {product_id}: {exc}") from exc
+
+    catalog = normalized
+    search_engine = CatalogSearch(catalog)
+    context_cache.invalidate()

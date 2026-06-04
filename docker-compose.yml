@@ -1,0 +1,122 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    profiles: ["local-db"]
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-odranid}
+      POSTGRES_USER: ${POSTGRES_USER:-odranid}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-odranid}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-odranid} -d $${POSTGRES_DB:-odranid}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  migrate:
+    image: pgvector/pgvector:pg16
+    profiles: ["local-db"]
+    env_file:
+      - .env
+    environment:
+      ODRANID_DATABASE_URL: ${ODRANID_DATABASE_URL:-postgresql://odranid:odranid@postgres:5432/odranid}
+    volumes:
+      - ./postgres/migrations:/migrations:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: >
+      sh -c 'for file in /migrations/*.sql; do
+        echo "applying $$file";
+        psql "$$ODRANID_DATABASE_URL" -v ON_ERROR_STOP=1 -f "$$file";
+      done'
+
+  api:
+    build: .
+    env_file:
+      - .env
+    environment:
+      ODRANID_DATABASE_URL: ${ODRANID_DATABASE_URL:-postgresql://odranid:odranid@postgres:5432/odranid}
+      ODRANID_CELERY_BROKER_URL: redis://dragonfly:6379/0
+      ODRANID_CELERY_RESULT_BACKEND: redis://dragonfly:6379/1
+    ports:
+      - "8000:8000"
+    depends_on:
+      dragonfly:
+        condition: service_healthy
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+
+  dragonfly:
+    image: docker.dragonflydb.io/dragonflydb/dragonfly:latest
+    command: ["--logtostderr"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - dragonfly_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-h", "127.0.0.1", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  worker_messages:
+    build: .
+    env_file:
+      - .env
+    environment:
+      ODRANID_DATABASE_URL: ${ODRANID_DATABASE_URL:-postgresql://odranid:odranid@postgres:5432/odranid}
+      ODRANID_CELERY_BROKER_URL: redis://dragonfly:6379/0
+      ODRANID_CELERY_RESULT_BACKEND: redis://dragonfly:6379/1
+    depends_on:
+      dragonfly:
+        condition: service_healthy
+    command: celery -A app.celery_app.celery_app worker -Q chatwoot_messages --loglevel=INFO --concurrency=4
+
+  worker_outbound:
+    build: .
+    env_file:
+      - .env
+    environment:
+      ODRANID_DATABASE_URL: ${ODRANID_DATABASE_URL:-postgresql://odranid:odranid@postgres:5432/odranid}
+      ODRANID_CELERY_BROKER_URL: redis://dragonfly:6379/0
+      ODRANID_CELERY_RESULT_BACKEND: redis://dragonfly:6379/1
+    depends_on:
+      dragonfly:
+        condition: service_healthy
+    command: celery -A app.celery_app.celery_app worker -Q chatwoot_outbound --loglevel=INFO --concurrency=2
+
+  beat:
+    build: .
+    env_file:
+      - .env
+    environment:
+      ODRANID_DATABASE_URL: ${ODRANID_DATABASE_URL:-postgresql://odranid:odranid@postgres:5432/odranid}
+      ODRANID_CELERY_BROKER_URL: redis://dragonfly:6379/0
+      ODRANID_CELERY_RESULT_BACKEND: redis://dragonfly:6379/1
+    depends_on:
+      dragonfly:
+        condition: service_healthy
+    command: celery -A app.celery_app.celery_app beat --loglevel=INFO
+
+  flower:
+    build: .
+    profiles: ["observability"]
+    env_file:
+      - .env
+    environment:
+      ODRANID_DATABASE_URL: ${ODRANID_DATABASE_URL:-postgresql://odranid:odranid@postgres:5432/odranid}
+      ODRANID_CELERY_BROKER_URL: redis://dragonfly:6379/0
+      ODRANID_CELERY_RESULT_BACKEND: redis://dragonfly:6379/1
+    ports:
+      - "5555:5555"
+    depends_on:
+      dragonfly:
+        condition: service_healthy
+    command: celery -A app.celery_app.celery_app flower --port=5555
+
+volumes:
+  postgres_data:
+  dragonfly_data:

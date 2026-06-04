@@ -1,0 +1,1 @@
+"""Odranid catalog microservice."""
