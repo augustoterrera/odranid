@@ -1303,6 +1303,7 @@ dependencies = [
     { name = "pydantic-settings" },
     { name = "python-multipart" },
     { name = "redis" },
+    { name = "typesense" },
     { name = "uvicorn", extra = ["standard"] },
 ]
 
@@ -1326,6 +1327,7 @@ requires-dist = [
     { name = "pydantic-settings", specifier = "==2.14.1" },
     { name = "python-multipart", specifier = "==0.0.30" },
     { name = "redis", specifier = "==6.4.0" },
+    { name = "typesense", specifier = "==0.21.0" },
     { name = "uvicorn", extras = ["standard"], specifier = "==0.48.0" },
 ]
 
@@ -2354,6 +2356,18 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/e0/01/c5a19253fe1ac159159ddf9a3a07cec8bb5e486ec4d9002ad2821da0e5d2/types_requests-2.33.0.20260518.tar.gz", hash = "sha256:df7bd3bfe0ca8402dfb841e7d9be714bb5578203283d66d7dc4ef69343449a5e", size = 24752, upload-time = "2026-05-18T06:07:37.966Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/1c/bc/b139710a3b6018f7fb2b9508b35c8af564e61bf2bf4fa619d088f3e16f85/types_requests-2.33.0.20260518-py3-none-any.whl", hash = "sha256:626d697d1adaaff76e2044dc8c5c051d8f21abc157bdfe204a75558076fe0bf0", size = 21391, upload-time = "2026-05-18T06:07:37.044Z" },
+]
+
+[[package]]
+name = "typesense"
+version = "0.21.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "requests" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/73/c4/b9ee39e15503c7e284bdb8afb5f2b8d06ee06e7abc33ed56c17388ab24e6/typesense-0.21.0.tar.gz", hash = "sha256:24470525b577300bd81fe43029dddd9269b942b20b49236edf049f6ecead7c8e", size = 14030, upload-time = "2024-05-10T04:42:42.306Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/88/2c/e3f25e6e2c5ddb0c8b6e78115f6acd1be3167da1bbe361ae0bcff5c90512/typesense-0.21.0-py3-none-any.whl", hash = "sha256:e4330f103a40af98ba2b0ffd817392a84a537e04816221c9a283faadea7718f0", size = 21143, upload-time = "2024-05-10T04:42:40.5Z" },
 ]
 
 [[package]]

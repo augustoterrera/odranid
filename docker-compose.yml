@@ -62,6 +62,23 @@ services:
       timeout: 3s
       retries: 20
 
+  typesense:
+    image: typesense/typesense:27.1
+    command:
+      - "--data-dir"
+      - "/data"
+      - "--api-key=${ODRANID_TYPESENSE_API_KEY:-localdevkey}"
+      - "--enable-cors"
+    ports:
+      - "8108:8108"
+    volumes:
+      - typesense_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8108 && printf \"GET /health HTTP/1.1\\r\\nHost: 127.0.0.1\\r\\nConnection: close\\r\\n\\r\\n\" >&3 && grep -q \"\\\"ok\\\":true\" <&3'"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
   worker_messages:
     build: .
     env_file:
@@ -120,3 +137,4 @@ services:
 volumes:
   postgres_data:
   dragonfly_data:
+  typesense_data:

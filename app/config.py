@@ -35,6 +35,11 @@ class Settings(BaseSettings):
     celery_broker_url: str = "redis://localhost:6379/0"
     celery_result_backend: str = "redis://localhost:6379/1"
     celery_timezone: str = "America/Argentina/Tucuman"
+    typesense_host: str = "localhost"
+    typesense_port: int = 8108
+    typesense_protocol: str = "http"
+    typesense_api_key: str | None = None
+    typesense_collection: str = "catalog_products"
 
     # Keep provider details outside business logic. These can point to
     # OpenAI, another embedding provider, or a local model later.
