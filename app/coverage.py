@@ -72,24 +72,11 @@ def calculate_coverage(product: ProductDocument, requested_m2: float) -> Coverag
             message=f"Para cubrir {format_number(requested_m2)} m2, recomendar {format_number(quantity)} m2 de este producto.",
         )
 
-    if sale_unit == "metro_lineal" and specs.ancho_m is not None and specs.ancho_m > 0:
-        linear_meters = requested_m2 / specs.ancho_m
-        recommended_linear_meters = max(1, math.ceil(linear_meters))
-        surplus = max(0.0, recommended_linear_meters * specs.ancho_m - requested_m2)
-        return CoverageCalculation(
-            requested_m2=round_decimal(requested_m2),
-            sale_unit=sale_unit,
-            coverage_m2=round_decimal(specs.ancho_m),
-            coverage_source="ancho_m_x_1m_lineal",
-            linear_meters_needed=round_decimal(recommended_linear_meters),
-            surplus_m2=round_decimal(surplus),
-            message=(
-                f"Con ancho de {format_number(specs.ancho_m)} m, para cubrir {format_number(requested_m2)} m2 "
-                f"se necesitan aproximadamente {format_number(linear_meters)} metros lineales. "
-                f"Para comprar por metro, recomendar {recommended_linear_meters} metros lineales."
-            ),
-        )
+    # Vendido cortado a medida: el cliente pide los metros que quiera, no se calcula cantidad.
+    if sale_unit == "metro_lineal":
+        return cut_to_measure_coverage(requested_m2, specs.ancho_m, sale_unit)
 
+    # Rollos/cortes: siempre se expresa en cantidad de rollos/cortes, nunca en metros lineales.
     coverage_m2, source = coverage_per_unit(product)
     if coverage_m2 is not None and coverage_m2 > 0:
         rolls_needed = max(1, math.ceil(requested_m2 / coverage_m2))
@@ -104,21 +91,13 @@ def calculate_coverage(product: ProductDocument, requested_m2: float) -> Coverag
             surplus_m2=round_decimal(surplus),
             message=(
                 f"Para cubrir {format_number(requested_m2)} m2, cada {unit_label} cubre "
-                f"{format_number(coverage_m2)} m2. Se necesitan {rolls_needed} {pluralize(unit_label, rolls_needed)}."
+                f"{format_number(coverage_m2)} m2. Necesitás {rolls_needed} {pluralize(unit_label, rolls_needed)}."
             ),
         )
 
+    # Sin largo de rollo (solo ancho): se vende cortado a medida.
     if specs.ancho_m is not None and specs.ancho_m > 0:
-        linear_meters = requested_m2 / specs.ancho_m
-        return CoverageCalculation(
-            requested_m2=round_decimal(requested_m2),
-            sale_unit=sale_unit,
-            linear_meters_needed=round_decimal(linear_meters),
-            message=(
-                f"Con ancho de {format_number(specs.ancho_m)} m, para cubrir {format_number(requested_m2)} m2 "
-                f"se necesitan aproximadamente {format_number(linear_meters)} metros lineales."
-            ),
-        )
+        return cut_to_measure_coverage(requested_m2, specs.ancho_m, sale_unit)
 
     return CoverageCalculation(
         requested_m2=round_decimal(requested_m2),
@@ -128,11 +107,40 @@ def calculate_coverage(product: ProductDocument, requested_m2: float) -> Coverag
     )
 
 
+def cut_to_measure_coverage(requested_m2: float, ancho_m: float | None, sale_unit: str) -> CoverageCalculation:
+    ancho_txt = f" (ancho {format_number(ancho_m)} m)" if ancho_m else ""
+    return CoverageCalculation(
+        requested_m2=round_decimal(requested_m2),
+        sale_unit=sale_unit,
+        coverage_source="corte_a_medida",
+        message=(
+            f"Este se vende cortado a medida{ancho_txt}: podés pedir la cantidad de metros que "
+            f"necesites para cubrir tus {format_number(requested_m2)} m2."
+        ),
+    )
+
+
 def effective_sale_unit(product: ProductDocument) -> str:
     sale_unit = product.product_type or "unidad"
-    if sale_unit != "m2" and is_linear_meter_product(product):
+    if sale_unit == "m2":
+        return "m2"
+    # Si tiene un rollo real (largo > 1m o rendimiento que implica largo), calcular rollos
+    # aunque el tipo o la descripción digan "metro" — corrige misclasificaciones de ingesta.
+    if has_roll_length(product):
+        return "rollo" if sale_unit == "metro_lineal" else sale_unit
+    # Sin rollo real y con señal de venta por metro: cortado a medida.
+    if sale_unit == "metro_lineal" or is_linear_meter_product(product):
         return "metro_lineal"
     return sale_unit
+
+
+def has_roll_length(product: ProductDocument) -> bool:
+    specs = product.specs
+    if specs.largo_m is not None and specs.largo_m > 1:
+        return True
+    if specs.rendimiento_m2 is not None and specs.ancho_m and specs.rendimiento_m2 > specs.ancho_m + 0.01:
+        return True
+    return False
 
 
 def is_linear_meter_product(product: ProductDocument) -> bool:

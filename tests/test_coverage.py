@@ -64,7 +64,7 @@ class CoverageTests(unittest.TestCase):
         self.assertIn("cada corte", coverage.message)
         self.assertIn("3 cortes", coverage.message)
 
-    def test_only_width_returns_linear_meters(self) -> None:
+    def test_only_width_is_cut_to_measure(self) -> None:
         product = product_with_specs(
             product_type="unidad",
             specs=ProductSpecs(ancho_m=1.4),
@@ -72,11 +72,14 @@ class CoverageTests(unittest.TestCase):
 
         coverage = calculate_coverage(product, requested_m2=20)
 
-        self.assertEqual(coverage.linear_meters_needed, 14.29)
         self.assertIsNone(coverage.rolls_needed)
+        self.assertIsNone(coverage.linear_meters_needed)
+        self.assertEqual(coverage.coverage_source, "corte_a_medida")
+        self.assertIn("cortado a medida", coverage.message)
+        self.assertNotIn("lineal", coverage.message)
         self.assertFalse(coverage.needs_advisor)
 
-    def test_meter_lineal_title_overrides_roll_label(self) -> None:
+    def test_meter_lineal_title_is_cut_to_measure(self) -> None:
         product = product_with_specs(
             product_type="rollo",
             specs=ProductSpecs(ancho_m=1.4, largo_m=1),
@@ -86,10 +89,24 @@ class CoverageTests(unittest.TestCase):
         coverage = calculate_coverage(product, requested_m2=36)
 
         self.assertEqual(coverage.sale_unit, "metro_lineal")
-        self.assertEqual(coverage.linear_meters_needed, 26)
         self.assertIsNone(coverage.rolls_needed)
-        self.assertIn("metros lineales", coverage.message)
-        self.assertNotIn("rollo", coverage.message)
+        self.assertNotIn("metros lineales", coverage.message)
+        self.assertIn("cortado a medida", coverage.message)
+
+    def test_real_roll_with_linear_text_still_computes_rolls(self) -> None:
+        # "Por Rollo (1.40m x 10m)" con texto "metro" en la descripcion: sigue siendo rollo.
+        product = product_with_specs(
+            product_type="rollo",
+            specs=ProductSpecs(ancho_m=1.4, largo_m=10, rendimiento_m2=14),
+            title="Pisos De Goma Negro Liso 2mm Por Rollo 1.40m x 10m por metro lineal",
+        )
+
+        coverage = calculate_coverage(product, requested_m2=20)
+
+        self.assertEqual(coverage.sale_unit, "rollo")
+        self.assertEqual(coverage.rolls_needed, 2)
+        self.assertIn("rollo", coverage.message)
+        self.assertNotIn("lineal", coverage.message)
 
     def test_metro_cuadrado_title_does_not_become_meter_lineal(self) -> None:
         product = product_with_specs(
