@@ -17,6 +17,7 @@ from typing import Any
 
 from .domain_synonyms import compatible_designs
 from .embeddings import OpenAIEmbeddingClient
+from .footwear import talle_excluded
 from .models import ProductDocument, ProductFilters, ProductSpecs, SearchHit, SearchRequest, SearchResponse
 from .typesense_index import QUERY_BY_FIELDS
 
@@ -172,6 +173,10 @@ def hits_from_response(payload: dict[str, Any], filters: ProductFilters) -> list
         document = raw.get("document") or {}
         product = product_from_typesense_doc(document)
         matched, is_alternative = classify_hit(product, filters)
+        # Calzado: si el cliente pidió un talle y el rango declarado del producto
+        # no lo incluye, no le entra — marcar como alternativa para mandarlo al fondo.
+        if filters.talle is not None and talle_excluded(product.title, filters.talle):
+            is_alternative = True
         hits.append(
             SearchHit(
                 product=product,

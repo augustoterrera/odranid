@@ -57,6 +57,7 @@ class ProductFilters(BaseModel):
     color: str | None = None
     espesor_mm: float | None = None
     ancho_m: float | None = None
+    talle: int | None = None
     tags: list[str] = Field(default_factory=list)
     in_stock_only: bool = True
     # When True, excludes pisos_vinilicos from results unless category was explicitly requested.

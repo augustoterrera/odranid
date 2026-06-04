@@ -77,6 +77,23 @@ class ClassifyTests(unittest.TestCase):
         self.assertIn("floor_design", matched)
         self.assertFalse(is_alternative)
 
+    def test_kids_boot_is_alternative_when_talle_out_of_range(self) -> None:
+        payload = {
+            "hits": [
+                {"document": {"id": "1", "title": "Bota De Lluvia Para Niños Del 21 Al 34",
+                              "rubro": "calzado", "in_stock": True, "content": "x"}, "text_match": 100},
+                {"document": {"id": "2", "title": "Bota Negra Caña Alta Industrial",
+                              "rubro": "calzado", "in_stock": True, "content": "x"}, "text_match": 90},
+            ]
+        }
+        filters = ProductFilters(rubro="calzado", talle=42)
+        hits = hits_from_response(payload, filters)
+        by_id = {hit.product.id: hit for hit in hits}
+        # La bota de niños (21-34) no entra en 42: alternativa.
+        self.assertTrue(by_id[1].is_alternative)
+        # La industrial no declara rango: no se descarta.
+        self.assertFalse(by_id[2].is_alternative)
+
 
 class FakeDocuments:
     def __init__(self, payload):

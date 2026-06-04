@@ -16,6 +16,7 @@ from pydantic_ai.providers.openai import OpenAIProvider
 
 from .catalog_helpers import AgentError, build_system_prompt, canonical_product_link, clamp_int, compact_search_response
 from ..coverage import calculate_coverage, extract_requested_m2
+from ..footwear import extract_requested_talle
 from ..models import (
     AgentMessage,
     AgentRequest,
@@ -246,6 +247,9 @@ def build_agent(model: Model, system_prompt: str) -> Agent[OdranidAgentDeps, Odr
             color=color,
             tags=tags or [],
         )
+        # Calzado: extraer el talle pedido del mensaje (determinístico) para descartar
+        # productos cuyo rango de talles no lo incluya, sin depender del LLM.
+        filters.talle = extract_requested_talle(ctx.deps.latest_message)
         # No confiar solo en que el LLM emita requested_m2: si el cliente mencionó m² a cubrir
         # (en este mensaje o en la query semántica), extraerlo de forma determinística para que
         # la cobertura SIEMPRE se calcule. Así no quedan respuestas sin "Necesitás X rollos".
