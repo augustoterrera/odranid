@@ -134,6 +134,7 @@ class AgentToolTrace(BaseModel):
 class AgentResponse(BaseModel):
     answer: str
     tool_calls: list[AgentToolTrace] = Field(default_factory=list)
+    intake: ProductIntakeResponse | None = None
 
 
 class ChatwootWebhookResponse(BaseModel):
