@@ -149,17 +149,16 @@ def main() -> None:
                 if api is None:
                     raise ReplayError("Chatwoot API client is required to fetch full conversation messages")
                 messages = api.get_messages(conversation_id)
-            turns = build_replay_turns(conversation_id, messages, args.mode, args.max_history, args.intake_only)
+            records = replay_conversation(conversation_id, messages, args.mode, args.max_history, args.intake_only)
             if not args.quiet:
-                print(f"conversation={conversation_id} messages={len(messages)} turns={len(turns)}")
-            for turn in turns:
-                record = replay_turn(turn, intake_only=args.intake_only)
+                print(f"conversation={conversation_id} messages={len(messages)} turns={len(records)}")
+            for record in records:
                 output_file.write(json.dumps(record, ensure_ascii=False) + "\n")
                 total_turns += 1
                 if not args.quiet:
                     print(
                         "  "
-                        f"message={turn.message_id} "
+                        f"message={record.get('message_id')} "
                         f"intent={record.get('intake', {}).get('intent')} "
                         f"should_search={record.get('intake', {}).get('should_search')} "
                         f"tool_calls={len(record.get('agent', {}).get('tool_calls', []))} "
@@ -185,17 +184,18 @@ def select_conversation_rows(args: argparse.Namespace, api: ChatwootApi | None) 
     return api.list_conversations(args.recent or 10, args.status)
 
 
-def build_replay_turns(
+def replay_conversation(
     conversation_id: int | str,
     raw_messages: list[dict[str, Any]],
     mode: str,
     max_history: int,
     intake_only: bool,
-) -> list[ReplayTurn]:
+) -> list[dict[str, Any]]:
     messages = sorted(raw_messages, key=message_sort_key)
     state: dict[str, Any] = {}
     history: list[AgentMessage] = []
-    turns: list[ReplayTurn] = []
+    records: list[dict[str, Any]] = []
+    last_record: dict[str, Any] | None = None
 
     for index, message in enumerate(messages):
         role = replay_message_role(message)
@@ -216,18 +216,20 @@ def build_replay_turns(
                 state_before=state,
                 expected_assistant=next_assistant_reply(messages, index),
             )
+            record = replay_turn(turn, intake_only=intake_only)
+            state_after = record.get("state_after")
+            if isinstance(state_after, dict):
+                state = state_after
             if mode == "all-incoming":
-                turns.append(turn)
+                records.append(record)
             elif mode == "last-incoming":
-                turns = [turn]
-
-            if not intake_only:
-                intake = analyze_turn_with_agent(content, history[-max_history:], state)
-                state = build_memory_state(state, intake, pending_slot_from_intake(intake))
+                last_record = record
 
         history.append(AgentMessage(role=role, content=content))
 
-    return turns
+    if mode == "last-incoming" and last_record is not None:
+        return [last_record]
+    return records
 
 
 def replay_turn(turn: ReplayTurn, intake_only: bool) -> dict[str, Any]:
@@ -270,17 +272,6 @@ def replay_turn(turn: ReplayTurn, intake_only: bool) -> dict[str, Any]:
     except Exception as exc:
         record["error"] = str(exc)
     return record
-
-
-def analyze_turn_with_agent(message: str, history: list[AgentMessage], state: dict[str, Any]) -> ProductIntakeResponse:
-    response = run_agent(
-        AgentRequest(
-            message=apply_pending_slot_to_message(message, state),
-            history=[*history, *history_from_state(state)],
-            limit=settings.chatwoot_agent_limit,
-        )
-    )
-    return response.intake or ProductIntakeResponse()
 
 
 def extract_collection(payload: Any) -> list[dict[str, Any]]:
