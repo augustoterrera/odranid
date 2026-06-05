@@ -284,8 +284,8 @@ class PydanticAgentTests(unittest.TestCase):
         )
 
         self.assertIn("1. Combo Piso Moneda Gris Simil Goma 15m2 + Adhesivo!!", response.answer)
-        self.assertIn("PVC/con diseño/moneda", response.answer)
-        self.assertIn("Rollo 1.5m x 10m (15 m²)", response.answer)
+        self.assertIn("PVC • Con diseño • Moneda • Espesor 1.2mm", response.answer)
+        self.assertIn("Rollo 10m x 1.5m (15 m²)", response.answer)
         self.assertIn("Necesitás 1 rollo", response.answer)
         self.assertIn("🔗 https://odranid.com.ar/producto/combo-piso-moneda-gris-simil-goma-15m2-adhesivo/", response.answer)
 

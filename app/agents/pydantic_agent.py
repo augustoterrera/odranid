@@ -100,13 +100,17 @@ Para mascotas:
 ### `missing`, `should_search` y `next_question`
 
 Usá `missing` solo para slots que todavía faltan para buscar:
-- Pisos: "floor_kind_or_design", "espesor_mm", "ancho_m", "requested_m2"
+- Pisos: "floor_kind_or_design", "espesor_mm", "ancho_m", "requested_m2". Excepción — modo recomendación:
+  cuando el cliente pide recomendación o dice que no conoce las medidas, NO pongas `espesor_mm` ni
+  `ancho_m` en `missing` (los definís vos por uso); completá `espesor_mm` en `known` y avanzá.
 - Mangueras: "use", "diameter", "length_m"
 - Mascotas: "animal", "size" si no hay `toy_type`
 
 `should_search=true` solo cuando el agente efectivamente va a llamar `buscar_productos` y tiene datos
 suficientes para hacerlo:
-- Pisos: `floor_kind` o `floor_design` + `espesor_mm` + `ancho_m` + `requested_m2`
+- Pisos: `floor_kind` o `floor_design` + `espesor_mm` + `ancho_m` + `requested_m2`. Excepción — modo
+  recomendación: si el cliente pidió recomendación o dijo que no sabe las medidas, alcanza con
+  `floor_kind`/`floor_design` + `espesor_mm` (recomendado por uso) + `requested_m2`, sin `ancho_m`.
 - Mangueras: `use` + `diameter` + `length_m`
 - Mascotas: `toy_type`, o `animal` + `size`
 - Hogar/calzado/general: algún producto o detalle específico buscable
@@ -134,9 +138,16 @@ debe ser `true`. Cuando falte información, `should_search=false`, completá `mi
 4. Vinílico: `category="pisos_vinilicos"` solo si el cliente pide "vinilico", "PVC" o "vinil"
    explícitamente como algo que quiere. El default es goma, sin `category`.
 
-5. Recomendaciones por uso: si el cliente pide recomendación y no especificó espesor, para gimnasio,
-   danza, escenario, alto tránsito o industrial podés asumir `espesor_mm=3`; para hogar, dormitorio
-   u oficina podés asumir `espesor_mm=2`.
+5. Recomendaciones por uso: cuando el cliente pide recomendación explícita ("¿qué me recomendás?",
+   "no sé qué elegir", "no sé las medidas", "ayudame a elegir", "¿cuál me conviene?") o dice que no
+   conoce las especificaciones, te está DELEGANDO la decisión: completá `known` con los valores
+   recomendados por uso y poné `should_search=true` (no sigas preguntando esas medidas). Defaults:
+   - gimnasio, danza, escenario, alto tránsito o industrial: `espesor_mm=3`.
+   - hogar, dormitorio, oficina o comercio: `espesor_mm=2`.
+   - material: goma/caucho para uso intenso (gimnasio, industrial); PVC para tránsito medio (oficina,
+     comercio, hogar). No pises `floor_kind`/`floor_design` si el cliente ya lo eligió (ej. simil madera).
+   El `ancho_m` NO hace falta para recomendar: es un atributo del producto. No bloquees la búsqueda
+   esperando el ancho cuando el cliente pidió que recomendaras o no conoce la medida.
 
 6. Símil madera: usá `floor_design="simil_madera"` solo con frases explícitas como "simil madera",
    "tipo madera" o "efecto madera". "piso de madera" no es simil madera.
@@ -512,9 +523,7 @@ def product_summary_line(index: int, hit: SearchHit) -> str:
     product = hit.product
     parts = [f"{index}. {product.title}"]
 
-    descriptors = product_descriptors(hit)
-    if descriptors:
-        parts.append("/".join(descriptors))
+    parts.extend(product_descriptors(hit))
 
     roll = roll_description(hit)
     if roll:
@@ -532,12 +541,18 @@ def product_descriptors(hit: SearchHit) -> list[str]:
     descriptors = []
     if product.material:
         descriptors.append(product.material)
+    if product.category == "pisos_vinilicos":
+        descriptors.append("Vinílico")
     if product.floor_kind == "diseno":
-        descriptors.append("con diseño")
+        descriptors.append("Con diseño")
+    elif product.floor_kind == "liso":
+        descriptors.append("Liso")
     elif product.floor_kind:
         descriptors.append(product.floor_kind)
     if product.floor_design:
-        descriptors.append(product.floor_design.replace("_", " "))
+        descriptors.append(product.floor_design.replace("_", " ").capitalize())
+    if product.specs.espesor_mm is not None:
+        descriptors.append(f"Espesor {format_number(product.specs.espesor_mm)}mm")
     return descriptors
 
 
@@ -545,7 +560,7 @@ def roll_description(hit: SearchHit) -> str | None:
     specs = hit.product.specs
     if specs.ancho_m is None or specs.largo_m is None:
         return None
-    roll = f"Rollo {format_number(specs.ancho_m)}m x {format_number(specs.largo_m)}m"
+    roll = f"Rollo {format_number(specs.largo_m)}m x {format_number(specs.ancho_m)}m"
     rendimiento = specs.rendimiento_m2 or hit.coverage.coverage_m2 if hit.coverage else specs.rendimiento_m2
     if rendimiento is not None:
         roll += f" ({format_number(rendimiento)} m²)"
