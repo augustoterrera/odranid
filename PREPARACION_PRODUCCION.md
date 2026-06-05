@@ -183,6 +183,9 @@ No hay TLS hoy. Agregar **Caddy** (más simple, TLS automático) o **nginx** del
 - `worker_messages`: hoy `--concurrency=4`. El cuello es la latencia de OpenAI por mensaje;
   para picos, **escalar horizontalmente** (más réplicas del worker) además de subir concurrency.
   Dejar documentado cómo levantar réplicas (`docker compose up --scale worker_messages=3`).
+- NOTA: ya existe `worker_catalog` (cola `catalog`, concurrency 1) aislando el sync del catálogo
+  de `chatwoot_messages` para que un sync pesado no demore las respuestas. Mantener esa separación
+  al escalar.
 
 ### B4. Límites de recursos (RESILIENCIA)
 
