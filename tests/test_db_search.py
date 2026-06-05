@@ -2,9 +2,31 @@ from __future__ import annotations
 
 import unittest
 
-from app.search.db_search import DatabaseCatalogSearch
+from app.search.db_search import DatabaseCatalogSearch, format_categories_by_rubro, prettify_slug
 from app.core.models import ProductDocument, ProductSpecs, SearchHit
 from app.search.search_common import post_filter_specific_terms
+
+
+class CategoryMapTests(unittest.TestCase):
+    def test_prettify_slug_replaces_underscores(self) -> None:
+        self.assertEqual(prettify_slug("para_lluvia"), "para lluvia")
+        self.assertEqual(prettify_slug("pisos_de_goma"), "pisos de goma")
+
+    def test_format_categories_by_rubro_renders_one_line_per_rubro(self) -> None:
+        lines = format_categories_by_rubro(
+            {
+                "pisos": ["pisos_de_goma", "pisos_vinilicos"],
+                "calzado": ["para_lluvia", "calzado"],
+            }
+        )
+        self.assertEqual(
+            lines,
+            ["- pisos: pisos de goma, pisos vinilicos", "- calzado: para lluvia, calzado"],
+        )
+
+    def test_format_categories_by_rubro_handles_empty_and_missing_cats(self) -> None:
+        self.assertEqual(format_categories_by_rubro({}), [])
+        self.assertEqual(format_categories_by_rubro({"general": []}), ["- general"])
 
 
 class DbSearchTests(unittest.TestCase):

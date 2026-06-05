@@ -97,6 +97,11 @@ Para mascotas:
 - `size`: "grande", "mediano", "chico"
 - `toy_type`: "frisbee", "hueso", "pelota", "mordillo", "aro"
 
+Para calzado:
+- `rubro`: "calzado"
+- `use`: "lluvia", "seguridad", "trabajo", "industrial"
+- El talle lo extrae el microservicio del mensaje; no hace falta que lo pongas en `known`.
+
 ### `missing`, `should_search` y `next_question`
 
 Usá `missing` solo para slots que todavía faltan para buscar:
@@ -113,7 +118,9 @@ suficientes para hacerlo:
   `floor_kind`/`floor_design` + `espesor_mm` (recomendado por uso) + `requested_m2`, sin `ancho_m`.
 - Mangueras: `use` + `diameter` + `length_m`
 - Mascotas: `toy_type`, o `animal` + `size`
-- Hogar/calzado/general: algún producto o detalle específico buscable
+- Calzado/hogar/general: con el rubro + cualquier detalle (uso, talle, tipo) ya alcanza para buscar. NO
+  exijas un cuestionario completo: una pregunta de disponibilidad ("¿tenés botas?") debe tener
+  `should_search=true` aunque falten detalles finos. Mejor buscar y mostrar el surtido que interrogar.
 
 Si `should_search=false`, no llames `buscar_productos`. Si llamás `buscar_productos`, el `intake.should_search`
 debe ser `true`. Cuando falte información, `should_search=false`, completá `missing` y poné una

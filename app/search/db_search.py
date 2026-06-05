@@ -62,6 +62,17 @@ class DatabaseCatalogSearch:
     def catalog_context(self) -> str:
         facets = self.catalog_facets("pisos", True)
         floor_kinds = facets.get("floor_kinds") or {}
+        category_lines = format_categories_by_rubro(facets.get("categories_by_rubro") or {})
+        category_section = (
+            [
+                "Mapa de categorías por rubro (qué líneas de producto tenemos en stock):",
+                *category_lines,
+                "Usá este mapa para orientarte y ofrecer lo que existe. Para stock/medidas reales de un producto, siempre buscá con buscar_productos.",
+                "",
+            ]
+            if category_lines
+            else []
+        )
         return "\n".join(
             [
                 "CATALOGO ODRANID — ESTADO ACTUAL (generado desde la base de datos)",
@@ -70,6 +81,7 @@ class DatabaseCatalogSearch:
                 "Rubros disponibles:",
                 *[f"- {name}: {total} productos" for name, total in (facets.get("rubros") or {}).items()],
                 "",
+                *category_section,
                 "Pisos — valores reales en stock:",
                 f"- Espesores en mm: {format_values(facets.get('espesores_mm') or [])}",
                 f"- Anchos en m: {format_values(facets.get('anchos_m') or [])}",
@@ -276,3 +288,15 @@ def format_values(values: list[Any]) -> str:
 
 def format_dict(values: dict[str, Any]) -> str:
     return ", ".join(f"{name} ({total})" for name, total in values.items()) if values else "N/D"
+
+
+def prettify_slug(slug: str) -> str:
+    return str(slug).replace("_", " ").strip()
+
+
+def format_categories_by_rubro(categories: dict[str, Any]) -> list[str]:
+    lines: list[str] = []
+    for rubro, cats in categories.items():
+        pretty = ", ".join(prettify_slug(cat) for cat in (cats or []))
+        lines.append(f"- {prettify_slug(rubro)}: {pretty}" if pretty else f"- {prettify_slug(rubro)}")
+    return lines
