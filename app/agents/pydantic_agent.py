@@ -14,7 +14,7 @@ from pydantic_ai.models import Model
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
-from .catalog_helpers import AgentError, build_system_prompt, canonical_product_link, clamp_int, compact_search_response
+from .catalog_helpers import AgentError, build_system_prompt, canonical_product_link, clamp_int, compact_search_response, format_number
 from ..catalog.coverage import calculate_coverage, extract_requested_m2
 from ..catalog.footwear import extract_requested_talle
 from ..core.models import (
@@ -409,12 +409,14 @@ def guard_agent_answer(answer: str, search_responses: list[SearchResponse]) -> s
             continue
         lines.append(line.rstrip())
 
+    lines = repair_orphan_product_links(lines, allowed["link_hits"], allowed["titles"])
     return compact_answer_lines(lines)
 
 
-def allowed_catalog_items(search_responses: list[SearchResponse]) -> dict[str, set[str]]:
+def allowed_catalog_items(search_responses: list[SearchResponse]) -> dict[str, Any]:
     links: set[str] = set(FIXED_SAFE_LINKS)
     titles: set[str] = set()
+    link_hits: dict[str, tuple[int, SearchHit]] = {}
     for response in search_responses:
         for hit in response.hits:
             title = hit.product.title.strip()
@@ -423,7 +425,94 @@ def allowed_catalog_items(search_responses: list[SearchResponse]) -> dict[str, s
             link = canonical_product_link(hit.product.link)
             if link:
                 links.add(link)
-    return {"links": links, "titles": titles}
+                link_hits.setdefault(link, (len(link_hits) + 1, hit))
+    return {"links": links, "titles": titles, "link_hits": link_hits}
+
+
+def repair_orphan_product_links(
+    lines: list[str],
+    link_hits: dict[str, tuple[int, SearchHit]],
+    allowed_titles: set[str],
+) -> list[str]:
+    repaired: list[str] = []
+    for line in lines:
+        link = standalone_whatsapp_link(line)
+        if link and link in link_hits and not previous_line_mentions_allowed_product(repaired, allowed_titles):
+            index, hit = link_hits[link]
+            repaired.append(product_summary_line(index, hit))
+        repaired.append(line)
+    return repaired
+
+
+def standalone_whatsapp_link(line: str) -> str | None:
+    match = re.match(r"^\s*🔗\s+(?P<link>https?://\S+)\s*$", line)
+    if not match:
+        return None
+    return canonical_product_link(match.group("link").rstrip(".,)"))
+
+
+def previous_line_mentions_allowed_product(lines: list[str], allowed_titles: set[str]) -> bool:
+    for line in reversed(lines):
+        if not line.strip():
+            continue
+        return mentions_allowed_product(line, allowed_titles)
+    return False
+
+
+def product_summary_line(index: int, hit: SearchHit) -> str:
+    product = hit.product
+    parts = [f"{index}. {product.title}"]
+
+    descriptors = product_descriptors(hit)
+    if descriptors:
+        parts.append("/".join(descriptors))
+
+    roll = roll_description(hit)
+    if roll:
+        parts.append(roll)
+
+    quantity = coverage_quantity(hit)
+    if quantity:
+        parts.append(quantity)
+
+    return " • ".join(parts)
+
+
+def product_descriptors(hit: SearchHit) -> list[str]:
+    product = hit.product
+    descriptors = []
+    if product.material:
+        descriptors.append(product.material)
+    if product.floor_kind == "diseno":
+        descriptors.append("con diseño")
+    elif product.floor_kind:
+        descriptors.append(product.floor_kind)
+    if product.floor_design:
+        descriptors.append(product.floor_design.replace("_", " "))
+    return descriptors
+
+
+def roll_description(hit: SearchHit) -> str | None:
+    specs = hit.product.specs
+    if specs.ancho_m is None or specs.largo_m is None:
+        return None
+    roll = f"Rollo {format_number(specs.ancho_m)}m x {format_number(specs.largo_m)}m"
+    rendimiento = specs.rendimiento_m2 or hit.coverage.coverage_m2 if hit.coverage else specs.rendimiento_m2
+    if rendimiento is not None:
+        roll += f" ({format_number(rendimiento)} m²)"
+    return roll
+
+
+def coverage_quantity(hit: SearchHit) -> str | None:
+    coverage = hit.coverage
+    if coverage is None:
+        return None
+    if coverage.rolls_needed is not None:
+        unit = "rollo" if coverage.rolls_needed == 1 else "rollos"
+        return f"Necesitás {coverage.rolls_needed} {unit}"
+    if coverage.quantity_m2 is not None:
+        return f"Necesitás {format_number(coverage.quantity_m2)} m2"
+    return coverage.message
 
 
 def format_allowed_links_for_whatsapp(line: str, allowed_links: set[str]) -> tuple[str, bool]:

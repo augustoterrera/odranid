@@ -6,7 +6,7 @@ from pydantic_ai.models.test import TestModel
 from pydantic_ai.tools import ToolDefinition
 
 from app.agents.pydantic_agent import run_pydantic_agent
-from app.core.models import AgentRequest, ProductDocument, ProductSpecs, SearchHit, SearchRequest, SearchResponse
+from app.core.models import AgentRequest, CoverageCalculation, ProductDocument, ProductSpecs, SearchHit, SearchRequest, SearchResponse
 
 
 class PydanticAgentTests(unittest.TestCase):
@@ -225,6 +225,69 @@ class PydanticAgentTests(unittest.TestCase):
         self.assertNotIn("🔗 🔗", response.answer)
         self.assertNotIn("Piso inventado", response.answer)
         self.assertNotIn("no-existe", response.answer)
+
+    def test_agent_repairs_orphan_product_link_with_real_title(self) -> None:
+        def fake_search(request: SearchRequest) -> SearchResponse:
+            return SearchResponse(
+                query=request.query,
+                total_catalog_size=1,
+                requested_m2=15,
+                hits=[
+                    SearchHit(
+                        product=ProductDocument(
+                            id=1,
+                            title="Combo Piso Moneda Gris Simil Goma 15m2 + Adhesivo!!",
+                            link="https://odranid.com/producto/combo-piso-moneda-gris-simil-goma-15m2-adhesivo/",
+                            rubro="pisos",
+                            floor_kind="diseno",
+                            floor_design="moneda",
+                            material="PVC",
+                            specs=ProductSpecs(espesor_mm=1.2, ancho_m=1.5, largo_m=10, rendimiento_m2=15),
+                            content="Piso moneda gris",
+                        ),
+                        score=0.9,
+                        coverage=CoverageCalculation(
+                            requested_m2=15,
+                            sale_unit="rollo",
+                            coverage_m2=15,
+                            rolls_needed=1,
+                            message="Para cubrir 15 m2, recomendar 1 rollo de este producto.",
+                        ),
+                    )
+                ],
+            )
+
+        response = run_pydantic_agent(
+            request=AgentRequest(message="Necesito piso moneda para cubrir 15m2", limit=5),
+            search=fake_search,
+            api_key="sk-test",
+            catalog_context="CATALOGO",
+            pydantic_model=ControlledTestModel(
+                tool_args={
+                    "query_semantica": "piso moneda cubrir 15m2",
+                    "rubro": "pisos",
+                    "tipo": "moneda",
+                    "requested_m2": 15,
+                },
+                output_args={
+                    "intake": {"intent": "pisos", "known": {"rubro": "pisos"}, "should_search": True},
+                    "answer": "\n".join(
+                        [
+                            "Te muestro opciones disponibles:",
+                            "",
+                            "1. Combo Piso Moneda Gris",
+                            "🔗 https://odranid.com/producto/combo-piso-moneda-gris-simil-goma-15m2-adhesivo/",
+                        ]
+                    ),
+                },
+            ),
+        )
+
+        self.assertIn("1. Combo Piso Moneda Gris Simil Goma 15m2 + Adhesivo!!", response.answer)
+        self.assertIn("PVC/con diseño/moneda", response.answer)
+        self.assertIn("Rollo 1.5m x 10m (15 m²)", response.answer)
+        self.assertIn("Necesitás 1 rollo", response.answer)
+        self.assertIn("🔗 https://odranid.com.ar/producto/combo-piso-moneda-gris-simil-goma-15m2-adhesivo/", response.answer)
 
     def test_agent_keeps_fixed_advisor_link_in_tool_backed_answer(self) -> None:
         def fake_search(request: SearchRequest) -> SearchResponse:
