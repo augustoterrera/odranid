@@ -700,19 +700,30 @@ def build_memory_state(previous_state: dict[str, Any], intake: ProductIntakeResp
     }
 
 
-_RETARGETING_RUBROS: dict[str, str] = {
-    "pisos": "los pisos de goma",
-    "mangueras": "las mangueras",
-    "mascotas": "los juguetes para tu mascota",
-    "juguetes": "los juguetes para tu mascota",
-    "calzado": "el calzado",
-}
+# El `intent` es texto libre del LLM (ej. "buscar_piso", "pisos", "comprar_manguera"),
+# así que matcheamos por substring sobre el intent normalizado en vez de igualdad exacta.
+_RETARGETING_RUBROS: tuple[tuple[tuple[str, ...], str], ...] = (
+    (("piso", "vinil", "pvc", "goma"), "los pisos de goma"),
+    (("mangu",), "las mangueras"),
+    (("masc", "juguete", "perro", "gato"), "los juguetes para tu mascota"),
+    (("calzado", "bota", "zapat"), "el calzado"),
+)
+
+
+def retargeting_rubro(intent: Any) -> str | None:
+    text = str(intent or "").strip().lower()
+    if not text:
+        return None
+    for needles, rubro in _RETARGETING_RUBROS:
+        if any(needle in text for needle in needles):
+            return rubro
+    return None
 
 
 def build_retargeting_message(state: dict[str, Any], default_message: str) -> str:
     """Personaliza el recordatorio según el rubro que venía buscando el cliente.
     Si no hay intención confiable, cae al mensaje genérico (no arriesga sonar robótico)."""
-    rubro = _RETARGETING_RUBROS.get(str((state or {}).get("intent") or "").strip())
+    rubro = retargeting_rubro((state or {}).get("intent"))
     if not rubro:
         return default_message
     return (
