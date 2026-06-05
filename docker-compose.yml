@@ -79,7 +79,10 @@ services:
 
   dragonfly:
     image: docker.dragonflydb.io/dragonflydb/dragonfly:latest
-    command: ["--logtostderr"]
+    command:
+      - "--logtostderr"
+      - "--proactor_threads=${DRAGONFLY_PROACTOR_THREADS:-1}"
+      - "--maxmemory=${DRAGONFLY_MAXMEMORY:-256mb}"
     # Solo loopback: el broker no debe ser accesible desde internet.
     ports:
       - "127.0.0.1:6379:6379"
