@@ -3,6 +3,8 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
+from fastapi.testclient import TestClient
+
 from app.models import AgentMessage, AgentRequest, AgentResponse, ProductIntakeResponse
 from app import main
 from app.main import clean_agent_search_query
@@ -127,6 +129,53 @@ class AdminAuthTests(unittest.TestCase):
     def test_admin_accepts_correct_token(self) -> None:
         with patch.object(main.settings, "admin_api_token", "secreto"):
             self.assertIsNone(main.require_admin_token(x_admin_token="secreto"))
+
+    def test_sync_catalog_endpoint_requires_admin_token(self) -> None:
+        client = TestClient(main.app)
+
+        with patch.object(main.settings, "admin_api_token", None):
+            response = client.post("/admin/sync-catalog")
+        self.assertEqual(response.status_code, 503)
+
+        with patch.object(main.settings, "admin_api_token", "secreto"):
+            response = client.post("/admin/sync-catalog")
+        self.assertEqual(response.status_code, 401)
+
+    def test_sync_catalog_endpoint_queues_celery_task(self) -> None:
+        from app.tasks import catalog_tasks
+
+        client = TestClient(main.app)
+
+        class FakeAsyncResult:
+            id = "task-123"
+
+        with patch.object(main.settings, "admin_api_token", "secreto"), patch.object(
+            catalog_tasks.sync_catalog_to_postgres, "delay", return_value=FakeAsyncResult()
+        ) as delay:
+            response = client.post("/admin/sync-catalog", headers={"x-admin-token": "secreto"})
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["status"], "queued")
+        self.assertEqual(body["task_id"], "task-123")
+        delay.assert_called_once_with()
+
+    def test_typesense_sync_endpoint_queues_full_rebuild(self) -> None:
+        from app.tasks import catalog_tasks
+
+        client = TestClient(main.app)
+
+        class FakeAsyncResult:
+            id = "task-456"
+
+        with patch.object(main.settings, "admin_api_token", "secreto"), patch.object(
+            catalog_tasks.sync_typesense_catalog, "delay", return_value=FakeAsyncResult()
+        ) as delay:
+            response = client.post("/admin/typesense-sync", headers={"x-admin-token": "secreto"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "queued")
+        delay.assert_called_once_with(recreate=True)
 
 
 class WebhookSecretPolicyTests(unittest.TestCase):

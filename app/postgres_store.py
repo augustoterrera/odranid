@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
 import psycopg
+from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 
@@ -28,6 +30,44 @@ class PostgresCatalogStore:
         except psycopg.Error as exc:
             raise PostgresStoreError(str(exc)) from exc
 
+    def list_products(self) -> list[dict[str, Any]]:
+        try:
+            with psycopg.connect(self.database_url, row_factory=dict_row) as conn:
+                with conn.cursor() as cur:
+                    cur.execute(LIST_PRODUCTS_SQL)
+                    return [row_with_parsed_embedding(dict(row)) for row in cur.fetchall()]
+        except psycopg.Error as exc:
+            raise PostgresStoreError(str(exc)) from exc
+
+    def existing_embeddings_by_content_hashes(self, content_hash_by_id: Mapping[int, str]) -> dict[int, list[float]]:
+        if not content_hash_by_id:
+            return {}
+
+        try:
+            with psycopg.connect(self.database_url, row_factory=dict_row) as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        select id, content_hash, embedding::text as embedding
+                        from catalog_products
+                        where id = any(%s::bigint[])
+                        """,
+                        (list(content_hash_by_id.keys()),),
+                    )
+                    rows = cur.fetchall()
+        except psycopg.Error as exc:
+            raise PostgresStoreError(str(exc)) from exc
+
+        embeddings: dict[int, list[float]] = {}
+        for row in rows:
+            product_id = int(row["id"])
+            if row.get("content_hash") != content_hash_by_id.get(product_id):
+                continue
+            embedding = parse_vector(row.get("embedding"))
+            if embedding is not None:
+                embeddings[product_id] = embedding
+        return embeddings
+
 
 def build_postgres_store_from_settings(settings: Any) -> PostgresCatalogStore:
     if not settings.database_url:
@@ -42,6 +82,67 @@ def row_to_params(row: dict[str, Any]) -> dict[str, Any]:
     embedding = row.get("embedding")
     params["embedding"] = f"[{','.join(str(float(value)) for value in embedding)}]" if embedding is not None else None
     return params
+
+
+def row_with_parsed_embedding(row: dict[str, Any]) -> dict[str, Any]:
+    row["embedding"] = parse_vector(row.get("embedding"))
+    return row
+
+
+def parse_vector(value: Any) -> list[float] | None:
+    if value is None:
+        return None
+    if isinstance(value, (list, tuple)):
+        return [float(item) for item in value]
+
+    text = str(value).strip()
+    if not text:
+        return None
+    if text.startswith("[") and text.endswith("]"):
+        text = text[1:-1]
+    if not text.strip():
+        return []
+    return [float(part.strip()) for part in text.split(",") if part.strip()]
+
+
+LIST_PRODUCTS_SQL = """
+select
+  id,
+  title,
+  slug,
+  link,
+  image,
+  price,
+  currency,
+  in_stock,
+  stock_text,
+  rubro,
+  category,
+  subcategory,
+  product_type,
+  floor_kind,
+  floor_design,
+  material,
+  color,
+  environments,
+  brands,
+  categories,
+  woo_tags,
+  technical_tags,
+  espesor_mm,
+  ancho_m,
+  largo_m,
+  rendimiento_m2,
+  diametro_mm,
+  largo_manguera_m,
+  content,
+  metadata,
+  raw_attributes,
+  embedding::text as embedding,
+  content_hash
+from catalog_products
+order by id
+"""
 
 
 UPSERT_SQL = """

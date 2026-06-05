@@ -219,31 +219,55 @@ def vector_literal(values: list[float]) -> str:
 def product_from_row(row: dict[str, Any]) -> ProductDocument:
     metadata = row.get("metadata") or {}
     specs = ProductSpecs(
-        espesor_mm=metadata.get("espesor_mm"),
-        ancho_m=metadata.get("ancho_m"),
-        largo_m=metadata.get("largo_m"),
-        rendimiento_m2=metadata.get("rendimiento_m2"),
+        espesor_mm=float_or_none(row.get("espesor_mm", metadata.get("espesor_mm"))),
+        ancho_m=float_or_none(row.get("ancho_m", metadata.get("ancho_m"))),
+        largo_m=float_or_none(row.get("largo_m", metadata.get("largo_m"))),
+        rendimiento_m2=float_or_none(row.get("rendimiento_m2", metadata.get("rendimiento_m2"))),
+        diametro_mm=float_or_none(row.get("diametro_mm", metadata.get("diametro_mm"))),
+        largo_manguera_m=float_or_none(row.get("largo_manguera_m", metadata.get("largo_manguera_m"))),
     )
     return ProductDocument(
         id=int(row["id"]),
         title=row.get("title") or metadata.get("titulo") or "",
+        slug=row.get("slug") or metadata.get("slug"),
         link=row.get("link") or metadata.get("link"),
+        image=row.get("image") or metadata.get("image"),
         price=row.get("price") if row.get("price") is None else float(row["price"]),
         currency=row.get("currency") or metadata.get("moneda") or "ARS",
         in_stock=bool(row.get("in_stock", metadata.get("en_stock", True))),
-        rubro=metadata.get("rubro") or "general",
-        category=metadata.get("categoria_principal") or metadata.get("category") or "general",
-        subcategory=metadata.get("subcategoria"),
+        stock_text=row.get("stock_text") or metadata.get("stock_text"),
+        rubro=row.get("rubro") or metadata.get("rubro") or "general",
+        category=row.get("category") or metadata.get("categoria_principal") or metadata.get("category") or "general",
+        subcategory=row.get("subcategory") or metadata.get("subcategoria"),
         product_type=row.get("product_type") or metadata.get("tipo_producto") or metadata.get("product_type") or "unidad",
-        floor_kind=metadata.get("tipo_piso_categoria") or metadata.get("floor_kind"),
-        floor_design=metadata.get("tipo_piso_diseno") or metadata.get("floor_design"),
-        color=metadata.get("color"),
-        material=metadata.get("material"),
-        technical_tags=metadata.get("tags") or [],
+        floor_kind=row.get("floor_kind") or metadata.get("tipo_piso_categoria") or metadata.get("floor_kind"),
+        floor_design=row.get("floor_design") or metadata.get("tipo_piso_diseno") or metadata.get("floor_design"),
+        material=row.get("material") or metadata.get("material"),
+        color=row.get("color") or metadata.get("color"),
+        environments=row.get("environments") or metadata.get("environments"),
+        brands=list_field(row.get("brands") or metadata.get("brands")),
+        categories=list_field(row.get("categories") or metadata.get("categories")),
+        woo_tags=list_field(row.get("woo_tags") or metadata.get("woo_tags")),
+        technical_tags=list_field(row.get("technical_tags") or metadata.get("tags")),
         specs=specs,
+        raw_attributes=row.get("raw_attributes") or {},
         content=row.get("content") or "",
         metadata=metadata,
     )
+
+
+def float_or_none(value: Any) -> float | None:
+    return None if value is None else float(value)
+
+
+def list_field(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return [str(item) for item in value]
+    if isinstance(value, tuple):
+        return [str(item) for item in value]
+    return [str(value)]
 
 
 def format_values(values: list[Any]) -> str:

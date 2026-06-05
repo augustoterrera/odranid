@@ -41,7 +41,6 @@ from .rag_precontext import build_rag_precontext
 from .retrieval import CatalogSearch
 from .typesense_client import build_typesense_client
 from .typesense_search import TypesenseCatalogSearch
-from .typesense_sync import TypesenseSyncError, run_typesense_sync
 from .woocommerce import build_client_from_settings
 
 app = FastAPI(title=settings.app_name)
@@ -380,13 +379,24 @@ def fetch_woocommerce() -> dict[str, object]:
 
 @app.post("/admin/typesense-sync", dependencies=[Depends(require_admin_token)])
 def typesense_sync() -> dict[str, object]:
-    """Full rebuild of the Typesense index from the normalized catalog."""
-    try:
-        result = run_typesense_sync(recreate=True)
-    except TypesenseSyncError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-    catalog_context_ttl.invalidate()
-    return result
+    """Encola un rebuild completo del índice de Typesense en el worker de catálogo.
+    Async para no bloquear el request (un sync completo puede tardar minutos). El
+    contexto cacheado se refresca solo por TTL una vez que la task termina."""
+    from .tasks.catalog_tasks import sync_typesense_catalog
+
+    async_result = sync_typesense_catalog.delay(recreate=True)
+    return {"ok": True, "status": "queued", "task": "sync_typesense_catalog", "task_id": async_result.id}
+
+
+@app.post("/admin/sync-catalog", dependencies=[Depends(require_admin_token)])
+def sync_catalog() -> dict[str, object]:
+    """Encola el sync WooCommerce -> Postgres en el worker de catálogo. Async: el
+    fetch + embeddings + upsert puede tardar minutos; devolvemos el task_id para
+    seguirlo (logs/Flower). El contexto cacheado se refresca solo por TTL."""
+    from .tasks.catalog_tasks import sync_catalog_to_postgres
+
+    async_result = sync_catalog_to_postgres.delay()
+    return {"ok": True, "status": "queued", "task": "sync_catalog_to_postgres", "task_id": async_result.id}
 
 
 def configure_search(force_local_reload: bool = False) -> None:

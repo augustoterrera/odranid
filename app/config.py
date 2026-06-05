@@ -52,6 +52,8 @@ class Settings(BaseSettings):
     typesense_search_enabled: bool = True
     # How often the beat scheduler refreshes the Typesense index from the catalog.
     typesense_sync_minutes: int = 30
+    # How often beat ingests WooCommerce into Postgres, including embedding cache refresh.
+    catalog_sync_minutes: int = 60
 
     # Keep provider details outside business logic. These can point to
     # OpenAI, another embedding provider, or a local model later.
