@@ -4,7 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from ..models import AgentResponse, AgentToolTrace, SearchHit, SearchResponse
+from ..core.models import AgentResponse, AgentToolTrace, SearchHit, SearchResponse
 
 
 class AgentError(RuntimeError):

@@ -22,11 +22,11 @@ from .chatwoot import (
     verify_chatwoot_signature,
 )
 from .chatwoot_service import chatwoot_event_key, persist_incoming_chatwoot_event
-from .config import settings
+from .core.config import settings
 from .coverage import enrich_search_response
 from .db_search import DatabaseCatalogSearch, DatabaseSearchError
 from .embeddings import OpenAIEmbeddingClient
-from .models import (
+from .core.models import (
     AgentRequest,
     AgentResponse,
     ChatwootWebhookResponse,

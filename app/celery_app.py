@@ -3,7 +3,7 @@ from __future__ import annotations
 from celery import Celery
 from celery.schedules import crontab
 
-from .config import settings
+from .core.config import settings
 
 
 celery_app = Celery(

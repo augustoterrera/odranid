@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.config import settings
+from app.core.config import settings
 from app.typesense_client import TypesenseHealthcheckError, healthcheck
 
 

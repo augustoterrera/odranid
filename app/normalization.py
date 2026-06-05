@@ -7,7 +7,7 @@ from collections.abc import Iterable
 from typing import Any
 
 from .domain_synonyms import DEFAULT_FLOOR, FLOOR_DESIGN_RULES
-from .models import ProductDocument, ProductSpecs
+from .core.models import ProductDocument, ProductSpecs
 
 
 NOISE_PHRASES = [

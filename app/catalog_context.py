@@ -6,7 +6,7 @@ from collections import Counter, defaultdict
 from collections.abc import Callable
 from pathlib import Path
 
-from .models import ProductDocument
+from .core.models import ProductDocument
 
 
 class TTLStringCache:

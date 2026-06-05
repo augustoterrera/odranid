@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 
 from app.coverage import calculate_coverage, extract_requested_m2
-from app.models import ProductDocument, ProductSpecs
+from app.core.models import ProductDocument, ProductSpecs
 
 
 class CoverageTests(unittest.TestCase):

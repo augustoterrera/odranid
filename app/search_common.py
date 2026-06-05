@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 
-from .models import ProductDocument, SearchHit
+from .core.models import ProductDocument, SearchHit
 from .normalization import norm_num, norm_text
 
 

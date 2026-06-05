@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from app.models import AgentMessage, AgentRequest, AgentResponse, ProductIntakeResponse
+from app.core.models import AgentMessage, AgentRequest, AgentResponse, ProductIntakeResponse
 from app import main
 from app.main import clean_agent_search_query
 from app.main import search_query_from_agent_request

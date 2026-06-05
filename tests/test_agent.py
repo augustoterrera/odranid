@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 
 from app.agents.catalog_helpers import compact_search_response, response_from_search_response
-from app.models import CoverageCalculation, ProductDocument, ProductSpecs, SearchHit, SearchResponse
+from app.core.models import CoverageCalculation, ProductDocument, ProductSpecs, SearchHit, SearchResponse
 
 
 class AgentTests(unittest.TestCase):

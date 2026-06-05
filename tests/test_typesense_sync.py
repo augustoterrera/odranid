@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from unittest import mock
 
-from app.models import ProductDocument, ProductSpecs
+from app.core.models import ProductDocument, ProductSpecs
 
 
 def _doc(pid: int = 1) -> ProductDocument:

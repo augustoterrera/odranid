@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from app.models import AgentMessage, AgentRequest, ProductIntakeResponse
+from app.core.models import AgentMessage, AgentRequest, ProductIntakeResponse
 from app.rag_precontext import build_rag_precontext
 
 

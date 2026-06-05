@@ -6,7 +6,7 @@ from pydantic_ai.models.test import TestModel
 from pydantic_ai.tools import ToolDefinition
 
 from app.agents.pydantic_agent import run_pydantic_agent
-from app.models import AgentRequest, ProductDocument, ProductSpecs, SearchHit, SearchRequest, SearchResponse
+from app.core.models import AgentRequest, ProductDocument, ProductSpecs, SearchHit, SearchRequest, SearchResponse
 
 
 class PydanticAgentCutoverTests(unittest.TestCase):

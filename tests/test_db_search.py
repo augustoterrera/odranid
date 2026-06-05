@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 
 from app.db_search import DatabaseCatalogSearch
-from app.models import ProductDocument, ProductSpecs, SearchHit
+from app.core.models import ProductDocument, ProductSpecs, SearchHit
 from app.search_common import post_filter_specific_terms
 
 

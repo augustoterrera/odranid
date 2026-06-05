@@ -11,10 +11,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .config import settings
+from .core.config import settings
 from .db_search import product_from_row
 from .embeddings import OpenAIEmbeddingClient, chunked
-from .models import ProductDocument
+from .core.models import ProductDocument
 from .normalization import extract_woocommerce_products, normalize_product
 from .postgres_store import PostgresStoreError, build_postgres_store_from_settings
 from .typesense_client import build_typesense_client

@@ -13,8 +13,8 @@ from app.chat_memory import (
     pending_slot_from_intake,
     should_reset_conversation_state,
 )
-from app.models import AgentMessage
-from app.models import ProductIntakeResponse
+from app.core.models import AgentMessage
+from app.core.models import ProductIntakeResponse
 
 
 class ChatMemoryTests(unittest.TestCase):

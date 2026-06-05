@@ -8,7 +8,7 @@ from unittest.mock import Mock, patch
 from app import main
 from app.chat_memory import ChatConversation, ChatMessage, ChatOutboxMessage
 from app.chatwoot_service import process_pending_conversation_messages
-from app.models import AgentMessage, AgentRequest, AgentResponse
+from app.core.models import AgentMessage, AgentRequest, AgentResponse
 from app.tasks import chatwoot_tasks
 
 

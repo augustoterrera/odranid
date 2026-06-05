@@ -20,9 +20,9 @@ from app.chat_memory import (  # noqa: E402
     should_reset_conversation_state,
 )
 from app.chatwoot import chatwoot_message_role  # noqa: E402
-from app.config import settings  # noqa: E402
+from app.core.config import settings  # noqa: E402
 from app.main import configure_search, run_agent  # noqa: E402
-from app.models import AgentMessage, AgentRequest, ProductIntakeResponse  # noqa: E402
+from app.core.models import AgentMessage, AgentRequest, ProductIntakeResponse  # noqa: E402
 
 
 class ReplayError(RuntimeError):

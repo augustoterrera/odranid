@@ -18,7 +18,7 @@ from typing import Any
 from .domain_synonyms import compatible_designs
 from .embeddings import OpenAIEmbeddingClient
 from .footwear import talle_excluded
-from .models import ProductDocument, ProductFilters, ProductSpecs, SearchHit, SearchRequest, SearchResponse
+from .core.models import ProductDocument, ProductFilters, ProductSpecs, SearchHit, SearchRequest, SearchResponse
 from .typesense_index import QUERY_BY_FIELDS
 
 # Attributes that influence ranking but never exclude. Weight = how much a match

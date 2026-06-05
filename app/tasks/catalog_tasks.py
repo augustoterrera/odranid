@@ -4,7 +4,7 @@ import logging
 
 from ..catalog_sync import CatalogSyncError, run_catalog_to_postgres_sync
 from ..celery_app import celery_app
-from ..config import settings
+from ..core.config import settings
 from ..postgres_store import PostgresStoreError
 from ..typesense_sync import TypesenseSyncError, run_typesense_sync
 

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from .domain_synonyms import RUBBER_FLOOR_DESIGNS as _RUBBER_FLOOR_DESIGNS
-from .models import ProductFilters, ProductIntakeResponse
+from .core.models import ProductFilters, ProductIntakeResponse
 
 
 def filters_from_intake(intake: ProductIntakeResponse) -> ProductFilters:

@@ -12,7 +12,7 @@ from app.celery_app import celery_app
 from app.chat_memory import ChatMemoryError, ChatMemoryStore, build_chat_memory_store_from_settings
 from app.chatwoot import ChatwootError, build_chatwoot_client
 from app.chatwoot_service import process_pending_conversation_messages
-from app.config import settings
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 

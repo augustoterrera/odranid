@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 import re
 
-from .models import CoverageCalculation, ProductDocument, SearchResponse
+from .core.models import CoverageCalculation, ProductDocument, SearchResponse
 from .normalization import norm_num, norm_text
 
 

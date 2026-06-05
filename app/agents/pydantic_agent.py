@@ -17,7 +17,7 @@ from pydantic_ai.providers.openai import OpenAIProvider
 from .catalog_helpers import AgentError, build_system_prompt, canonical_product_link, clamp_int, compact_search_response
 from ..coverage import calculate_coverage, extract_requested_m2
 from ..footwear import extract_requested_talle
-from ..models import (
+from ..core.models import (
     AgentMessage,
     AgentRequest,
     AgentResponse,
