@@ -399,6 +399,108 @@ class ChatMemoryStore:
                     (Jsonb(state), conversation_id),
                 )
 
+    def retargeting_candidates(
+        self,
+        hours: int,
+        window_hours: int = 22,
+        max_age_hours: int = 0,
+        require_intent: bool = True,
+        limit: int = 100,
+    ) -> list[ChatConversation]:
+        """Conversaciones elegibles para un recordatorio único de retargeting.
+
+        Condiciones:
+        - El último mensaje de la conversación es del bot (assistant) y el cliente
+          no respondió hace >= ``hours`` (abandono).
+        - El último mensaje del CLIENTE cae dentro de ``window_hours`` (ventana de
+          WhatsApp de 24h): fuera de eso un texto libre sería rechazado.
+        - ``require_intent``: solo leads con intención de producto (state.intent),
+          excluyendo cierres cordiales ("no, gracias") que dejan intent en null.
+        - ``max_age_hours`` (si > 0): descarta backlog histórico muy viejo.
+        - Todavía no recibieron retargeting (one-shot permanente).
+        """
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    select c.id, c.channel, c.external_conversation_id, c.state, c.account_id
+                    from public.chat_conversations c
+                    join lateral (
+                      select role, created_at
+                      from public.chat_messages m
+                      where m.conversation_id = c.id
+                      order by m.created_at desc
+                      limit 1
+                    ) last_msg on true
+                    join lateral (
+                      select max(created_at) as created_at
+                      from public.chat_messages m
+                      where m.conversation_id = c.id and m.role = 'user'
+                    ) last_user on true
+                    where last_msg.role = 'assistant'
+                      and last_msg.created_at <= now() - make_interval(hours => %(hours)s)
+                      and (%(max_age)s = 0 or last_msg.created_at >= now() - make_interval(hours => %(max_age)s))
+                      and last_user.created_at is not null
+                      and last_user.created_at >= now() - make_interval(hours => %(window)s)
+                      and coalesce((c.state->>'retargeting_sent')::boolean, false) = false
+                      and (%(require_intent)s = false
+                           or (c.state->>'intent') is not null and (c.state->>'intent') <> '')
+                    order by last_msg.created_at asc
+                    limit %(limit)s
+                    """,
+                    {
+                        "hours": hours,
+                        "window": window_hours,
+                        "max_age": max_age_hours,
+                        "require_intent": require_intent,
+                        "limit": limit,
+                    },
+                )
+                return [conversation_from_row(row) for row in cur.fetchall()]
+
+    def retargeting_stats(self) -> dict[str, int]:
+        """Funnel de retargeting: enviados y cuántos reactivaron (el cliente
+        escribió DESPUÉS de recibir el recordatorio)."""
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    select
+                      count(*) filter (
+                        where coalesce((c.state->>'retargeting_sent')::boolean, false)
+                      ) as sent,
+                      count(*) filter (
+                        where coalesce((c.state->>'retargeting_sent')::boolean, false)
+                          and (c.state->>'retargeting_sent_at') is not null
+                          and exists (
+                            select 1 from public.chat_messages m
+                            where m.conversation_id = c.id
+                              and m.role = 'user'
+                              and m.created_at > (c.state->>'retargeting_sent_at')::timestamptz
+                          )
+                      ) as reactivated
+                    from public.chat_conversations c
+                    """
+                )
+                row = first_row(cur.fetchone())
+                return {"sent": int(row.get("sent") or 0), "reactivated": int(row.get("reactivated") or 0)}
+
+    def mark_retargeting_sent(self, conversation_id: int) -> None:
+        """Marca la conversación como retargeteada (one-shot permanente),
+        sin pisar el resto del ``state`` (merge jsonb)."""
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    update public.chat_conversations
+                    set state = coalesce(state, '{}'::jsonb)
+                                || jsonb_build_object('retargeting_sent', true,
+                                                      'retargeting_sent_at', now()::text)
+                    where id = %s
+                    """,
+                    (conversation_id,),
+                )
+
     def create_outbox_message(
         self,
         conversation_id: int,
@@ -596,6 +698,28 @@ def build_memory_state(previous_state: dict[str, Any], intake: ProductIntakeResp
         "last_question": next_question,
         "should_search": should_search,
     }
+
+
+_RETARGETING_RUBROS: dict[str, str] = {
+    "pisos": "los pisos de goma",
+    "mangueras": "las mangueras",
+    "mascotas": "los juguetes para tu mascota",
+    "juguetes": "los juguetes para tu mascota",
+    "calzado": "el calzado",
+}
+
+
+def build_retargeting_message(state: dict[str, Any], default_message: str) -> str:
+    """Personaliza el recordatorio según el rubro que venía buscando el cliente.
+    Si no hay intención confiable, cae al mensaje genérico (no arriesga sonar robótico)."""
+    rubro = _RETARGETING_RUBROS.get(str((state or {}).get("intent") or "").strip())
+    if not rubro:
+        return default_message
+    return (
+        "Hola, ¿cómo estás? 👋\n\n"
+        f"Quedamos viendo {rubro} y no quería dejarte sin respuesta. "
+        "¿Seguís buscando? Si me contás lo que te falta, te paso opciones 👌"
+    )
 
 
 def pending_slot_from_intake(intake: ProductIntakeResponse) -> str | None:

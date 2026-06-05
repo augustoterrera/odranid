@@ -405,6 +405,18 @@ def sync_catalog() -> dict[str, object]:
     return {"ok": True, "status": "queued", "task": "sync_catalog_to_postgres", "task_id": async_result.id}
 
 
+@app.get("/admin/retargeting-stats", dependencies=[Depends(require_admin_token)])
+def retargeting_stats() -> dict[str, object]:
+    """Funnel de retargeting: enviados, reactivados (el cliente escribió después
+    del recordatorio) y tasa de reactivación."""
+    store = build_chat_memory_store_from_settings(settings)
+    if store is None:
+        raise HTTPException(status_code=503, detail="Chat memory store is not configured")
+    stats = store.retargeting_stats()
+    rate = round(stats["reactivated"] / stats["sent"], 4) if stats["sent"] else 0.0
+    return {"ok": True, **stats, "reactivation_rate": rate}
+
+
 def configure_search(force_local_reload: bool = False) -> None:
     global db_search_engine, typesense_search_engine
     typesense_search_engine = build_typesense_engine()

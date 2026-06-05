@@ -4,12 +4,19 @@ import logging
 import socket
 import time
 from contextlib import contextmanager
+from datetime import datetime
 from typing import Iterator
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import redis
 
 from app.celery_app import celery_app
-from app.chat.chat_memory import ChatMemoryError, ChatMemoryStore, build_chat_memory_store_from_settings
+from app.chat.chat_memory import (
+    ChatMemoryError,
+    ChatMemoryStore,
+    build_chat_memory_store_from_settings,
+    build_retargeting_message,
+)
 from app.chat.chatwoot import ChatwootError, build_chatwoot_client
 from app.chat.chatwoot_service import process_pending_conversation_messages
 from app.core.config import settings
@@ -320,3 +327,54 @@ def requeue_stuck_conversation_jobs() -> dict[str, object]:
 def cleanup_expired_locks() -> dict[str, object]:
     cleaned = memory_store().cleanup_expired_conversation_locks()
     return {"ok": True, "cleaned": cleaned}
+
+
+def within_business_hours() -> bool:
+    """True si la hora local (timezone de Celery) está dentro de la franja
+    comercial configurada para enviar retargeting."""
+    start = settings.retargeting_send_hour_start
+    end = settings.retargeting_send_hour_end
+    try:
+        now = datetime.now(ZoneInfo(settings.celery_timezone))
+    except ZoneInfoNotFoundError:
+        now = datetime.now()
+    return start <= now.hour < end
+
+
+@celery_app.task(name="app.tasks.chatwoot_tasks.send_retargeting_messages", queue="chatwoot_outbound")
+def send_retargeting_messages() -> dict[str, object]:
+    """Recordatorio único a leads tibios que no contestaron el último mensaje del bot.
+
+    One-shot permanente: una conversación retargeteada nunca se vuelve a tocar.
+    Reusa el outbox (idempotencia + reintentos + envío real)."""
+    if not settings.retargeting_enabled:
+        return {"ok": True, "status": "disabled"}
+    if not within_business_hours():
+        return {"ok": True, "status": "outside_business_hours"}
+
+    store = memory_store()
+    candidates = store.retargeting_candidates(
+        hours=settings.retargeting_hours,
+        window_hours=settings.retargeting_window_hours,
+        max_age_hours=settings.retargeting_max_age_hours,
+        require_intent=settings.retargeting_require_intent,
+        limit=settings.retargeting_batch_limit,
+    )
+    sent = 0
+    for conversation in candidates:
+        # Marca primero (one-shot): si algo falla después, no reintentamos el envío
+        # automáticamente para no arriesgar mensajear dos veces a quien dijo "no, gracias".
+        store.mark_retargeting_sent(conversation.id)
+        content = build_retargeting_message(conversation.state, settings.retargeting_message)
+        outbox_id = store.create_outbox_message(
+            conversation_id=conversation.id,
+            external_conversation_id=conversation.external_conversation_id,
+            channel=conversation.channel,
+            content=content,
+            idempotency_key=f"retargeting:{conversation.id}",
+            max_attempts=settings.chatwoot_outbox_max_retries,
+        )
+        send_chatwoot_outbound_message.apply_async((str(outbox_id),), queue="chatwoot_outbound")
+        sent += 1
+    logger.info("chatwoot_retargeting_sweep", extra={"candidates": len(candidates), "sent": sent})
+    return {"ok": True, "sent": sent}

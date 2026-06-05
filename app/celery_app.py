@@ -27,6 +27,7 @@ celery_app.conf.update(
         "app.tasks.chatwoot_tasks.requeue_stuck_conversation_jobs": {"queue": "chatwoot_messages"},
         "app.tasks.chatwoot_tasks.dispatch_pending_outbox_messages": {"queue": "chatwoot_outbound"},
         "app.tasks.chatwoot_tasks.cleanup_expired_locks": {"queue": "chatwoot_messages"},
+        "app.tasks.chatwoot_tasks.send_retargeting_messages": {"queue": "chatwoot_outbound"},
         "app.tasks.catalog_tasks.sync_catalog_to_postgres": {"queue": "catalog"},
         "app.tasks.catalog_tasks.sync_typesense_catalog": {"queue": "catalog"},
     },
@@ -46,6 +47,10 @@ celery_app.conf.update(
         "cleanup-expired-locks": {
             "task": "app.tasks.chatwoot_tasks.cleanup_expired_locks",
             "schedule": crontab(minute="*/15"),
+        },
+        "send-retargeting-messages": {
+            "task": "app.tasks.chatwoot_tasks.send_retargeting_messages",
+            "schedule": crontab(minute=f"*/{settings.retargeting_sweep_minutes}"),
         },
         "sync-catalog-to-postgres": {
             "task": "app.tasks.catalog_tasks.sync_catalog_to_postgres",

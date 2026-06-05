@@ -38,6 +38,36 @@ class Settings(BaseSettings):
     chatwoot_job_max_retries: int = 5
     chatwoot_outbox_max_retries: int = 5
     chatwoot_stale_processing_minutes: int = 15
+    # Retargeting: recordatorio único a clientes que dejaron de responder al
+    # último mensaje del bot. Opt-in (fail-safe): apagado por defecto para no
+    # mensajear clientes reales sin que se active explícitamente.
+    retargeting_enabled: bool = False
+    # Horas de silencio del cliente (desde el último mensaje del bot) antes de retargetear.
+    retargeting_hours: int = 8
+    # Ventana de WhatsApp: solo se puede mandar texto libre dentro de las 24h del
+    # último mensaje del cliente. Con margen, cortamos a 22h: si el último mensaje
+    # del cliente es más viejo, NO se retargetea (el mensaje sería rechazado).
+    retargeting_window_hours: int = 22
+    # Solo retargetear leads "tibios": conversaciones con intención de producto
+    # detectada (state.intent != null). Excluye cierres cordiales tipo "no, gracias"
+    # (que dejan intent en null). False = retargetear todo abandono.
+    retargeting_require_intent: bool = True
+    # Horario comercial local (timezone de Celery) en el que se permite enviar.
+    # Fuera de esta franja el barrido no manda nada (lo agarra la próxima ventana).
+    retargeting_send_hour_start: int = 8
+    retargeting_send_hour_end: int = 21
+    # No despertar conversaciones más viejas que esto: evita que el primer run
+    # mensajee de golpe a todo el backlog histórico. 0 = sin tope de antigüedad.
+    retargeting_max_age_hours: int = 72
+    # Cada cuántos minutos corre el beat de retargeting.
+    retargeting_sweep_minutes: int = 60
+    # Máximo de conversaciones a retargetear por corrida.
+    retargeting_batch_limit: int = 100
+    retargeting_message: str = (
+        "Hola, ¿cómo estás? 👋\n\n"
+        "Quería escribirte para saber si te quedó alguna duda o si hay algo en lo que te pueda ayudar.\n\n"
+        "Si te parece, lo vemos con tranquilidad por acá y te doy una mano con lo que necesites."
+    )
     celery_broker_url: str = "redis://localhost:6379/0"
     celery_result_backend: str = "redis://localhost:6379/1"
     celery_timezone: str = "America/Argentina/Tucuman"
