@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from .domain_synonyms import RUBBER_FLOOR_DESIGNS as _RUBBER_FLOOR_DESIGNS
+from .catalog.domain_synonyms import RUBBER_FLOOR_DESIGNS as _RUBBER_FLOOR_DESIGNS
 from .core.models import ProductFilters, ProductIntakeResponse
 
 

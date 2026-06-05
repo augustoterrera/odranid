@@ -103,7 +103,7 @@ def postgres_row(pid: int = 1, embedding=None) -> dict:
 
 class RunSyncTests(unittest.TestCase):
     def test_sync_indexes_catalog_without_openai(self) -> None:
-        from app import typesense_sync
+        from app.catalog import typesense_sync
 
         client = FakeClient()
         with mock.patch.object(typesense_sync.settings, "typesense_api_key", "k"), \
@@ -118,7 +118,7 @@ class RunSyncTests(unittest.TestCase):
         self.assertEqual(len(client.collections.col.imported), 2)
 
     def test_build_catalog_documents_reads_postgres_store(self) -> None:
-        from app import typesense_sync
+        from app.catalog import typesense_sync
 
         store = FakePostgresStore([postgres_row(1, embedding=[0.1, 0.2])])
         with mock.patch.object(typesense_sync.settings, "database_url", "postgresql://db"):
@@ -130,7 +130,7 @@ class RunSyncTests(unittest.TestCase):
         self.assertEqual(batch.embeddings_by_id, {1: [0.1, 0.2]})
 
     def test_sync_uses_postgres_embeddings_without_openai_call(self) -> None:
-        from app import typesense_sync
+        from app.catalog import typesense_sync
 
         client = FakeClient()
         store = FakePostgresStore([postgres_row(1, embedding=[0.1, 0.2])])
@@ -149,7 +149,7 @@ class RunSyncTests(unittest.TestCase):
         embedder_cls.assert_not_called()
 
     def test_embeddings_for_only_embeds_missing_vectors(self) -> None:
-        from app import typesense_sync
+        from app.catalog import typesense_sync
 
         embedder = mock.Mock()
         embedder.embed_many.return_value = [[0.9]]
@@ -161,7 +161,7 @@ class RunSyncTests(unittest.TestCase):
         embedder.embed_many.assert_called_once_with(["goma moneda"])
 
     def test_sync_requires_api_key(self) -> None:
-        from app import typesense_sync
+        from app.catalog import typesense_sync
 
         with mock.patch.object(typesense_sync.settings, "typesense_api_key", None):
             with self.assertRaises(typesense_sync.TypesenseSyncError):

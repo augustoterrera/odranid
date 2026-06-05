@@ -8,7 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from app.normalization import extract_woocommerce_products, normalize_product  # noqa: E402
+from app.catalog.normalization import extract_woocommerce_products, normalize_product  # noqa: E402
 
 
 def main() -> None:

@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .domain_synonyms import SYNONYM_GROUPS
+from .catalog.domain_synonyms import SYNONYM_GROUPS
 from .core.models import ProductDocument
 
 # Matches text-embedding-3-small and the pgvector vector(1536) column.

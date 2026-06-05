@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from app.footwear import extract_requested_talle, parse_talle_range, talle_excluded
+from app.catalog.footwear import extract_requested_talle, parse_talle_range, talle_excluded
 
 
 class FootwearTests(unittest.TestCase):

@@ -7,7 +7,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from app.catalog_sync import DEFAULT_EMBEDDING_CACHE, run_catalog_to_postgres_sync  # noqa: E402
+from app.catalog.catalog_sync import DEFAULT_EMBEDDING_CACHE, run_catalog_to_postgres_sync  # noqa: E402
 
 
 def main() -> None:

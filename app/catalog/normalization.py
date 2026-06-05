@@ -6,8 +6,8 @@ import unicodedata
 from collections.abc import Iterable
 from typing import Any
 
+from ..core.models import ProductDocument, ProductSpecs
 from .domain_synonyms import DEFAULT_FLOOR, FLOOR_DESIGN_RULES
-from .core.models import ProductDocument, ProductSpecs
 
 
 NOISE_PHRASES = [

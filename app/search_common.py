@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 
 from .core.models import ProductDocument, SearchHit
-from .normalization import norm_num, norm_text
+from .catalog.normalization import norm_num, norm_text
 
 
 def post_filter_specific_terms(query: str, hits: list[SearchHit], limit: int) -> list[SearchHit]:

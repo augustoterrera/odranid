@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from app.domain_synonyms import (
+from app.catalog.domain_synonyms import (
     RUBBER_FLOOR_DESIGNS,
     compatible_designs,
     synonyms_for,

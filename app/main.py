@@ -9,7 +9,7 @@ from pathlib import Path
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 
 from .agents.catalog_helpers import AgentError
-from .catalog_context import CatalogContextCache, TTLStringCache
+from .catalog.catalog_context import CatalogContextCache, TTLStringCache
 from .chat_memory import (
     ChatMemoryError,
     ChatMemoryStore,
@@ -23,7 +23,7 @@ from .chatwoot import (
 )
 from .chatwoot_service import chatwoot_event_key, persist_incoming_chatwoot_event
 from .core.config import settings
-from .coverage import enrich_search_response
+from .catalog.coverage import enrich_search_response
 from .db_search import DatabaseCatalogSearch, DatabaseSearchError
 from .embeddings import OpenAIEmbeddingClient
 from .core.models import (
@@ -36,12 +36,12 @@ from .core.models import (
     SearchRequest,
     SearchResponse,
 )
-from .normalization import extract_woocommerce_products, normalize_product
+from .catalog.normalization import extract_woocommerce_products, normalize_product
 from .rag_precontext import build_rag_precontext
 from .retrieval import CatalogSearch
 from .typesense_client import build_typesense_client
 from .typesense_search import TypesenseCatalogSearch
-from .woocommerce import build_client_from_settings
+from .catalog.woocommerce import build_client_from_settings
 
 app = FastAPI(title=settings.app_name)
 logger = logging.getLogger(__name__)

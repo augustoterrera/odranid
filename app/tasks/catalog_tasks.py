@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import logging
 
-from ..catalog_sync import CatalogSyncError, run_catalog_to_postgres_sync
+from ..catalog.catalog_sync import CatalogSyncError, run_catalog_to_postgres_sync
 from ..celery_app import celery_app
 from ..core.config import settings
-from ..postgres_store import PostgresStoreError
-from ..typesense_sync import TypesenseSyncError, run_typesense_sync
+from ..catalog.postgres_store import PostgresStoreError
+from ..catalog.typesense_sync import TypesenseSyncError, run_typesense_sync
 
 logger = logging.getLogger(__name__)
 

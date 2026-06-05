@@ -6,7 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
-from app.catalog_sync import run_catalog_to_postgres_sync
+from app.catalog.catalog_sync import run_catalog_to_postgres_sync
 
 
 def raw_product(product_id: int = 101, name: str = "Piso Moneda Goma 3mm") -> dict[str, Any]:

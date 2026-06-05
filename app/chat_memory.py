@@ -12,7 +12,7 @@ from psycopg.types.json import Jsonb
 from psycopg_pool import ConnectionPool
 
 from .core.models import AgentMessage, AgentResponse, ProductIntakeResponse
-from .normalization import norm_num, norm_text
+from .catalog.normalization import norm_num, norm_text
 from .slot_questions import derived_roll_surface_m2, floor_next_question, hose_next_question
 
 

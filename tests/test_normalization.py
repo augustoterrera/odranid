@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from app.normalization import floor_taxonomy
+from app.catalog.normalization import floor_taxonomy
 
 
 def _product(name: str, description: str = "") -> dict:

@@ -15,9 +15,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from .domain_synonyms import compatible_designs
+from .catalog.domain_synonyms import compatible_designs
 from .embeddings import OpenAIEmbeddingClient
-from .footwear import talle_excluded
+from .catalog.footwear import talle_excluded
 from .core.models import ProductDocument, ProductFilters, ProductSpecs, SearchHit, SearchRequest, SearchResponse
 from .typesense_index import QUERY_BY_FIELDS
 

@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from app.core.config import settings  # noqa: E402
-from app.woocommerce import build_client_from_settings  # noqa: E402
+from app.catalog.woocommerce import build_client_from_settings  # noqa: E402
 
 
 def main() -> None:
