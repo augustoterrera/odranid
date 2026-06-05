@@ -12,7 +12,7 @@ from app.catalog.normalization import extract_woocommerce_products, normalize_pr
 
 
 def main() -> None:
-    path = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "productos.json"
+    path = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "data" / "productos.json"
     payload = json.loads(path.read_text(encoding="utf-8"))
     products = [normalize_product(product) for product in extract_woocommerce_products(payload)]
 

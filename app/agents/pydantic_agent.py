@@ -182,7 +182,7 @@ def run_pydantic_agent(
 ) -> AgentResponse:
     """Run the single PydanticAI agent without the Agno team."""
     if prompt_file is None:
-        prompt_file = Path("prompt_agente_odranid.md")
+        prompt_file = Path("app/agents/prompts/prompt_agente_odranid.md")
 
     configure_logfire()
     deps = OdranidAgentDeps(

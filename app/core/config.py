@@ -8,8 +8,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     app_name: str = "odranid-catalog-service"
-    catalog_file: Path = Path("productos.json")
-    agent_prompt_file: Path = Path("prompt_agente_odranid.md")
+    catalog_file: Path = Path("data/productos.json")
+    agent_prompt_file: Path = Path("app/agents/prompts/prompt_agente_odranid.md")
     context_cache_file: Path = Path("/tmp/odranid_catalog_context.txt")
     # TTL del contexto de catálogo. Evita recalcular las facetas de Postgres (~3s)
     # en cada mensaje; se invalida al sincronizar/recargar el catálogo.

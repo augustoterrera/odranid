@@ -3,7 +3,7 @@
 Esto NO es extracción de intención por keywords (eso lo hace el RequirementsAgent
 vía LLM). Son helpers deterministas que operan sobre el estado YA estructurado que
 devuelve el LLM: arman la próxima pregunta de slot faltante y calculan superficie
-derivada de rollos. Ver AGENT.md, sección "Lo Que NO Cambia".
+derivada de rollos. Ver docs/AGENT.md, sección "Lo Que NO Cambia".
 """
 from __future__ import annotations
 
