@@ -13,13 +13,13 @@ from urllib.request import Request, urlopen
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from app.chat_memory import (  # noqa: E402
+from app.chat.chat_memory import (  # noqa: E402
     apply_pending_slot_to_message,
     build_memory_state,
     pending_slot_from_intake,
     should_reset_conversation_state,
 )
-from app.chatwoot import chatwoot_message_role  # noqa: E402
+from app.chat.chatwoot import chatwoot_message_role  # noqa: E402
 from app.core.config import settings  # noqa: E402
 from app.main import configure_search, run_agent  # noqa: E402
 from app.core.models import AgentMessage, AgentRequest, ProductIntakeResponse  # noqa: E402

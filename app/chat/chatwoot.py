@@ -9,7 +9,7 @@ from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from .core.models import AgentMessage, AgentResponse
+from ..core.models import AgentMessage, AgentResponse
 
 
 class ChatwootError(RuntimeError):

@@ -10,18 +10,18 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Request
 
 from .agents.catalog_helpers import AgentError
 from .catalog.catalog_context import CatalogContextCache, TTLStringCache
-from .chat_memory import (
+from .chat.chat_memory import (
     ChatMemoryError,
     ChatMemoryStore,
     build_chat_memory_store_from_settings,
 )
-from .chatwoot import (
+from .chat.chatwoot import (
     ChatwootError,
     extract_message_event,
     parse_chatwoot_payload,
     verify_chatwoot_signature,
 )
-from .chatwoot_service import chatwoot_event_key, persist_incoming_chatwoot_event
+from .chat.chatwoot_service import chatwoot_event_key, persist_incoming_chatwoot_event
 from .core.config import settings
 from .catalog.coverage import enrich_search_response
 from .search.db_search import DatabaseCatalogSearch, DatabaseSearchError
@@ -292,7 +292,7 @@ def build_search_query(intake: ProductIntakeResponse, request: AgentRequest) -> 
     back to the raw conversation text (no keyword parsing).
     """
     if intake.known and intake.known.get("rubro"):
-        from .chat_memory import known_to_natural_text
+        from .chat.chat_memory import known_to_natural_text
         base = known_to_natural_text(intake.known)
         if base:
             return clean_agent_search_query(base)

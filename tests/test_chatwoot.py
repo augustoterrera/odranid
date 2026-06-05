@@ -5,7 +5,7 @@ import hmac
 import json
 import unittest
 
-from app.chatwoot import extract_message_event, verify_chatwoot_signature
+from app.chat.chatwoot import extract_message_event, verify_chatwoot_signature
 
 
 class ChatwootWebhookTests(unittest.TestCase):

@@ -17,8 +17,8 @@ from .chat_memory import (
     should_reset_conversation_state,
 )
 from .chatwoot import ChatwootMessageEvent
-from .core.config import settings
-from .core.models import AgentRequest, AgentResponse, ProductIntakeResponse
+from ..core.config import settings
+from ..core.models import AgentRequest, AgentResponse, ProductIntakeResponse
 
 logger = logging.getLogger(__name__)
 

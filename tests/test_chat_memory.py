@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from types import SimpleNamespace
 
-from app.chat_memory import (
+from app.chat.chat_memory import (
     ChatMemoryStore,
     apply_pending_slot_to_message,
     build_chat_memory_store_from_settings,
