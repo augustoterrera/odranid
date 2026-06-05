@@ -1,34 +1,47 @@
 # Infra de producción (Parte B)
 
-Cómo dejar Odranid seguro y escalable en el VPS. Implementado en `docker-compose.yml`,
-`deploy/Caddyfile` y `scripts/backup_postgres.sh`. Las variables van en `.env`
-(ver `.env.example`, bloque "Infra / despliegue").
+Cómo dejar Odranid seguro y escalable en el VPS. Implementado en `docker-compose.yml` y
+`scripts/backup_postgres.sh`. Las variables van en `.env` (ver `.env.example`, bloque
+"Infra / despliegue").
 
-## Modelo de puertos (B1)
-Solo el reverse proxy (80/443) queda expuesto a internet. Todo lo demás está bindeado a
-`127.0.0.1` del host (loopback): Postgres 5432, Typesense 8108, Dragonfly 6379, Flower 5555 y
-la API 8000. Desde el VPS se alcanzan; desde internet, no. En dev local `localhost:<puerto>`
-sigue funcionando igual.
+> Este VPS usa **Docker + Traefik + Tailscale**. El reverse proxy/TLS lo provee el Traefik ya
+> existente; el acceso a herramientas internas es por la **tailnet** (no se publican).
 
-- **Flower** además lleva basic auth: setear `FLOWER_BASIC_AUTH=usuario:password` (NO dejar el
-  default). Está bajo el perfil `observability`.
+## Modelo de puertos / exposición (B1)
+- **Público (vía Traefik)**: SOLO el webhook de Chatwoot (`/webhooks/...`). Es lo único que un
+  servicio externo (Chatwoot) necesita alcanzar.
+- **Loopback `127.0.0.1` del host**: Postgres 5432, Typesense 8108, Dragonfly 6379, Flower 5555 y
+  la API 8000. No accesibles desde internet. Desde el VPS y por la **tailnet** sí.
+- **Acceso a internas por Tailscale**: para usar Flower o pegarle a `/agent`, `/search`, `/admin/*`
+  sin exponerlos, usar Tailscale. Lo más simple, `tailscale serve`:
+  ```bash
+  tailscale serve --bg 8000   # API por https://<nodo>.<tailnet>.ts.net
+  tailscale serve --bg 5555   # Flower
+  ```
+  (o un túnel SSH a `127.0.0.1:<puerto>`). Flower igual lleva basic auth (`FLOWER_BASIC_AUTH`).
 
-## Reverse proxy + HTTPS (B2)
-Servicio `caddy` bajo el perfil `proxy` (opt-in). Caddy termina TLS con Let's Encrypt
-automáticamente y proxea a `api:8000` por la red interna.
+## Reverse proxy + HTTPS con Traefik (B2)
+La API se integra al Traefik existente por **labels** (servicio `api` en el compose), conectada a
+la red externa `proxy`. Traefik termina TLS (Let's Encrypt) y rutea por el entrypoint `websecure`
+con el certresolver `letsencrypt`.
 
-Requisitos: un dominio apuntando al VPS y los puertos 80/443 libres.
-
+Setup del VPS (una vez):
 ```bash
-# en .env
-ODRANID_PUBLIC_DOMAIN=odranid.tu-dominio.com
+# La red 'proxy' ya existe (la usa Traefik). Si no:
+docker network create proxy
 
-docker compose --profile proxy up -d caddy
+# en .env
+ODRANID_PUBLIC_DOMAIN=odranid.tu-dominio.com   # DNS -> IP pública del VPS
+
+docker compose up -d        # api se registra solo en Traefik por sus labels
 ```
 
-Rate-limiting por IP: requiere construir Caddy con el plugin `caddy-ratelimit` (xcaddy). Está
-documentado y comentado en `deploy/Caddyfile`. Como alternativa inmediata, limitar a nivel
-firewall del VPS (nftables/ufw).
+Por defecto el router matchea `Host(...) && PathPrefix(/webhooks)`: **solo el webhook** sale a
+internet (incluye `/webhooks/chatwoot/health`). Para publicar todo el dominio, cambiar la rule del
+label a `Host(${ODRANID_PUBLIC_DOMAIN})` (ver comentario en el compose). URL del webhook para
+Chatwoot: `https://<dominio>/webhooks/chatwoot`.
+
+Rate-limiting por IP: configurarlo en Traefik (middleware `rateLimit`) o a nivel firewall del VPS.
 
 ## Escalado (B3)
 - **API**: corre con `--workers ${API_WORKERS:-2}`. Subir `API_WORKERS` según CPU/RAM.
@@ -62,9 +75,13 @@ Probar el restore en una base de prueba al menos una vez (un backup sin restore 
 un backup).
 
 ## Checklist
+- [ ] Red `proxy` existe (`docker network create proxy` si no) y Traefik la usa.
 - [ ] `.env`: `ODRANID_PUBLIC_DOMAIN`, `FLOWER_BASIC_AUTH` (cambiado), `ODRANID_ADMIN_API_TOKEN`,
       `ODRANID_REQUIRE_WEBHOOK_SECRET=true` + `ODRANID_CHATWOOT_WEBHOOK_SECRET`.
-- [ ] `docker compose --profile proxy up -d` y verificar `https://<dominio>/health`.
+- [ ] `docker compose up -d` y verificar `https://<dominio>/webhooks/chatwoot/health` (público) y
+      el certificado emitido por Traefik.
+- [ ] Confirmar que `/agent`, `/admin/*` y la raíz NO responden públicamente (404 de Traefik) y sí
+      por la tailnet.
 - [ ] Confirmar que 5432/8108/6379/5555/8000 NO responden desde una IP externa.
 - [ ] Cron de backup andando y un restore probado.
 - [ ] `API_WORKERS` y límites de memoria ajustados a la RAM del VPS.

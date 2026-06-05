@@ -49,8 +49,7 @@ services:
       ODRANID_CELERY_BROKER_URL: redis://dragonfly:6379/0
       ODRANID_CELERY_RESULT_BACKEND: redis://dragonfly:6379/1
       ODRANID_TYPESENSE_HOST: ${ODRANID_TYPESENSE_HOST:-typesense}
-    # Loopback: en producción la API se sirve a través del reverse proxy (perfil "proxy"),
-    # no directo a internet. localhost:8000 sigue disponible para debug local.
+    # Loopback para debug local / acceso por Tailscale; el tráfico público entra por Traefik.
     ports:
       - "127.0.0.1:8000:8000"
     depends_on:
@@ -60,6 +59,19 @@ services:
         condition: service_healthy
     # Varios workers para aguantar concurrencia (cada uno con su propia cache TTL en memoria).
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers ${API_WORKERS:-2}
+    networks:
+      - default   # red interna de compose: dragonfly, typesense, postgres
+      - proxy      # red de Traefik (externa)
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=proxy"
+      # SOLO el webhook de Chatwoot queda público (incluye /webhooks/chatwoot/health).
+      # El resto (/agent, /search, /admin/*) NO se rutea: se accede por la tailnet.
+      # Para exponer TODO el dominio, reemplazar la rule por: Host(`${ODRANID_PUBLIC_DOMAIN}`)
+      - "traefik.http.routers.odranid.rule=Host(`${ODRANID_PUBLIC_DOMAIN}`) && PathPrefix(`/webhooks`)"
+      - "traefik.http.routers.odranid.entrypoints=websecure"
+      - "traefik.http.routers.odranid.tls.certresolver=letsencrypt"
+      - "traefik.http.services.odranid.loadbalancer.server.port=8000"
     deploy:
       resources:
         limits:
@@ -197,29 +209,16 @@ services:
         condition: service_healthy
     command: celery -A app.celery_app.celery_app flower --port=5555 --basic-auth=${FLOWER_BASIC_AUTH:-admin:changeme}
 
-  # Reverse proxy con HTTPS automático (Let's Encrypt). Opt-in: solo se levanta con
-  # el perfil "proxy" en producción. Necesita un dominio apuntando al VPS y los puertos
-  # 80/443 libres. Termina TLS y proxea a api:8000 por la red interna (no expone la API
-  # directo). Config en deploy/Caddyfile.
-  caddy:
-    image: caddy:2
-    profiles: ["proxy"]
-    restart: unless-stopped
-    environment:
-      ODRANID_PUBLIC_DOMAIN: ${ODRANID_PUBLIC_DOMAIN:-localhost}
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
-    depends_on:
-      - api
+# El reverse proxy + TLS lo provee el Traefik ya existente del VPS (red externa "proxy",
+# entrypoint websecure, certresolver letsencrypt). La API se integra por labels (ver servicio
+# api). No se incluye un proxy propio para no competir por los puertos 80/443.
+
+networks:
+  # Red externa donde corre Traefik. Creada fuera de este compose: docker network create proxy
+  proxy:
+    external: true
 
 volumes:
   postgres_data:
   dragonfly_data:
   typesense_data:
-  caddy_data:
-  caddy_config:
