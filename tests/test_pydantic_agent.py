@@ -289,6 +289,60 @@ class PydanticAgentTests(unittest.TestCase):
         self.assertIn("Necesitás 1 rollo", response.answer)
         self.assertIn("🔗 https://odranid.com.ar/producto/combo-piso-moneda-gris-simil-goma-15m2-adhesivo/", response.answer)
 
+    def test_agent_reruns_forcing_search_when_should_search_but_no_tool_call(self) -> None:
+        # Invariante: should_search=true exige una llamada a buscar_productos. Si el modelo
+        # narra la búsqueda como texto (en primera persona) sin llamar la herramienta, el turno
+        # es inválido y debe re-ejecutarse forzando la búsqueda.
+        seen_requests: list[SearchRequest] = []
+
+        def fake_search(request: SearchRequest) -> SearchResponse:
+            seen_requests.append(request)
+            return SearchResponse(
+                query=request.query,
+                total_catalog_size=1,
+                hits=[
+                    SearchHit(
+                        product=ProductDocument(
+                            id=1,
+                            title="Piso liso 2mm",
+                            link="https://odranid.com/producto/piso-liso-2mm/",
+                            rubro="pisos",
+                            floor_kind="liso",
+                            specs=ProductSpecs(espesor_mm=2, ancho_m=1, largo_m=15),
+                            product_type="rollo",
+                            content="Piso liso",
+                        ),
+                        score=0.9,
+                    )
+                ],
+            )
+
+        response = run_pydantic_agent(
+            request=AgentRequest(message="2", limit=5),
+            search=fake_search,
+            api_key="sk-test",
+            catalog_context="CATALOGO",
+            pydantic_model=ForceSearchRetryModel(
+                tool_args={
+                    "query_semantica": "piso liso 2mm ancho 2m cubrir 12m2 gimnasio",
+                    "rubro": "pisos",
+                    "tipo": "liso",
+                    "espesor_mm": 2,
+                    "ancho_m": 2,
+                    "requested_m2": 12,
+                },
+                narrated_answer="Busco pisos liso 2 mm de espesor, 2 m de ancho para cubrir 12 m2 en gimnasio.",
+                searched_answer="Te muestro estas opciones reales para tu gimnasio.",
+            ),
+        )
+
+        # No se filtró la query narrada: la respuesta final viene de la búsqueda forzada.
+        self.assertEqual(response.answer, "Te muestro estas opciones reales para tu gimnasio.")
+        self.assertNotIn("Busco pisos liso", response.answer)
+        self.assertEqual(len(response.tool_calls), 1)
+        self.assertEqual(response.tool_calls[0].name, "buscar_productos")
+        self.assertEqual(len(seen_requests), 1)
+
     def test_agent_keeps_fixed_advisor_link_in_tool_backed_answer(self) -> None:
         def fake_search(request: SearchRequest) -> SearchResponse:
             return SearchResponse(query=request.query, total_catalog_size=0, hits=[])
@@ -318,6 +372,40 @@ class ControlledTestModel(TestModel):
             custom_output_args=output_args,
         )
         self.tool_args = tool_args
+
+    def gen_tool_args(self, tool_def: ToolDefinition) -> object:
+        if tool_def.name == "buscar_productos":
+            return self.tool_args
+        return super().gen_tool_args(tool_def)
+
+
+class ForceSearchRetryModel(TestModel):
+    """First run claims should_search but calls no tool; the forced re-run calls the tool.
+
+    The forced re-run is detected by the `force_search` marker that ``build_user_prompt``
+    appends to the user prompt.
+    """
+
+    _FORCE_MARKER = "ya tenés datos suficientes para buscar"
+
+    def __init__(self, *, tool_args: dict[str, object], narrated_answer: str, searched_answer: str) -> None:
+        super().__init__(call_tools=[], custom_output_args=self._intake_output(narrated_answer))
+        self.tool_args = tool_args
+        self.narrated_answer = narrated_answer
+        self.searched_answer = searched_answer
+
+    @staticmethod
+    def _intake_output(answer: str) -> dict[str, object]:
+        return {
+            "intake": {"intent": "pisos", "known": {"rubro": "pisos"}, "should_search": True},
+            "answer": answer,
+        }
+
+    async def request(self, messages, model_settings, model_request_parameters):  # type: ignore[override]
+        if self._FORCE_MARKER in str(messages):
+            self.call_tools = ["buscar_productos"]
+            self.custom_output_args = self._intake_output(self.searched_answer)
+        return await super().request(messages, model_settings, model_request_parameters)
 
     def gen_tool_args(self, tool_def: ToolDefinition) -> object:
         if tool_def.name == "buscar_productos":

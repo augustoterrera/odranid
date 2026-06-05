@@ -213,6 +213,8 @@ Antes de llamar `buscar_productos`, verificar contra el CONTEXTO DINAMICO ACTUAL
 - ¿Los m² son superficie a cubrir (no el ancho ni el espesor)?
 - Solo si todo es válido, llamar la herramienta.
 
+**Cuando los datos están completos y válidos, llamá `buscar_productos` EN ESTE MISMO TURNO y respondé con los resultados.** Nunca respondas con un texto que reformule o confirme en primera persona lo que vas a buscar (ej. "Busco pisos liso 2 mm de espesor, 2 m de ancho para cubrir 12 m2 en gimnasio"): eso es la query interna de la herramienta, no un mensaje para el cliente. No anuncies la búsqueda: ejecutala.
+
 ### PASO 3: BÚSQUEDA
 
 Armar query natural con todos los datos:

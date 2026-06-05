@@ -185,20 +185,14 @@ def run_pydantic_agent(
         prompt_file = Path("app/agents/prompts/prompt_agente_odranid.md")
 
     configure_logfire()
-    deps = OdranidAgentDeps(
-        search=search, default_limit=request.limit, max_limit=request.limit, latest_message=request.message
-    )
+    deps = build_agent_deps(request, search)
     agent = build_agent(
         model=pydantic_model or build_openai_model(model, api_key),
         system_prompt=build_pydantic_system_prompt(prompt_file, catalog_context),
     )
 
-    try:
-        result = agent.run_sync(build_user_prompt(request), deps=deps)
-    except Exception as exc:
-        raise AgentError(f"PydanticAI agent run failed: {exc}") from exc
+    output, deps = run_agent_enforcing_search(agent, request, search, deps)
 
-    output = result.output
     safe_answer = guard_agent_answer(output.answer, deps.search_responses)
     if not safe_answer.strip():
         raise AgentError("PydanticAI agent response did not include final text")
@@ -208,6 +202,54 @@ def run_pydantic_agent(
         tool_calls=deps.tool_calls,
         intake=output.intake,
     )
+
+
+def build_agent_deps(request: AgentRequest, search: SearchCallable) -> OdranidAgentDeps:
+    return OdranidAgentDeps(
+        search=search,
+        default_limit=request.limit,
+        max_limit=request.limit,
+        latest_message=request.message,
+    )
+
+
+def run_agent_enforcing_search(
+    agent: Agent[OdranidAgentDeps, OdranidAgentOutput],
+    request: AgentRequest,
+    search: SearchCallable,
+    deps: OdranidAgentDeps,
+) -> tuple[OdranidAgentOutput, OdranidAgentDeps]:
+    """Run the agent enforcing the should_search invariant.
+
+    Per the prompt, ``should_search=true`` means the agent WILL call ``buscar_productos``.
+    If it claims should_search but made no tool call, it narrated the search instead of
+    doing it (e.g. replying with the query in first person: "Busco pisos liso 2mm..."),
+    and that text would leak to the client. That turn is invalid: re-run once forcing the
+    tool so the answer is built from real catalog data.
+    """
+    output = _run_agent_once(agent, request, deps)
+    if output.intake and output.intake.should_search and not deps.tool_calls:
+        logger.warning(
+            "agent_should_search_without_tool_call",
+            extra={"latest_message": request.message},
+        )
+        deps = build_agent_deps(request, search)
+        output = _run_agent_once(agent, request, deps, force_search=True)
+    return output, deps
+
+
+def _run_agent_once(
+    agent: Agent[OdranidAgentDeps, OdranidAgentOutput],
+    request: AgentRequest,
+    deps: OdranidAgentDeps,
+    *,
+    force_search: bool = False,
+) -> OdranidAgentOutput:
+    try:
+        result = agent.run_sync(build_user_prompt(request, force_search=force_search), deps=deps)
+    except Exception as exc:
+        raise AgentError(f"PydanticAI agent run failed: {exc}") from exc
+    return result.output
 
 
 def build_agent(model: Model, system_prompt: str) -> Agent[OdranidAgentDeps, OdranidAgentOutput]:
@@ -314,19 +356,26 @@ def build_pydantic_system_prompt(prompt_file: Path, catalog_context: str) -> str
     return "\n\n".join([build_system_prompt(prompt_file, catalog_context), PYDANTIC_AGENT_INSTRUCTIONS, INTAKE_EXTRACTION_RULES])
 
 
-def build_user_prompt(request: AgentRequest) -> str:
+def build_user_prompt(request: AgentRequest, *, force_search: bool = False) -> str:
     payload = {
         "latest_user_message": request.message,
         "history": [message.model_dump() for message in visible_history(request.history)],
     }
-    return "\n".join(
-        [
-            "Respondé el último mensaje del cliente usando este contexto de conversación.",
-            "```json",
-            json.dumps(payload, ensure_ascii=False, indent=2),
-            "```",
-        ]
-    )
+    lines = [
+        "Respondé el último mensaje del cliente usando este contexto de conversación.",
+        "```json",
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        "```",
+    ]
+    if force_search:
+        lines.append(
+            "IMPORTANTE: ya tenés datos suficientes para buscar. Llamá `buscar_productos` AHORA y "
+            "construí la respuesta con los resultados. NO respondas con un texto que describa o "
+            "confirme lo que vas a buscar, ni repitas el pedido en primera persona "
+            "(ej. \"Busco pisos liso 2mm...\"): eso es una query interna, no un mensaje al cliente. "
+            "Ejecutá la herramienta."
+        )
+    return "\n".join(lines)
 
 
 def visible_history(history: list[AgentMessage]) -> list[AgentMessage]:
