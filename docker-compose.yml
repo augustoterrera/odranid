@@ -6,10 +6,16 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-odranid}
       POSTGRES_USER: ${POSTGRES_USER:-odranid}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-odranid}
+    # Solo loopback del host: nunca expuesto a internet. localhost sigue funcionando
+    # para dev/psql; en el VPS solo se alcanza desde la propia máquina.
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    deploy:
+      resources:
+        limits:
+          memory: ${POSTGRES_MEM_LIMIT:-2g}
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-odranid} -d $${POSTGRES_DB:-odranid}"]
       interval: 5s
@@ -43,22 +49,34 @@ services:
       ODRANID_CELERY_BROKER_URL: redis://dragonfly:6379/0
       ODRANID_CELERY_RESULT_BACKEND: redis://dragonfly:6379/1
       ODRANID_TYPESENSE_HOST: ${ODRANID_TYPESENSE_HOST:-typesense}
+    # Loopback: en producción la API se sirve a través del reverse proxy (perfil "proxy"),
+    # no directo a internet. localhost:8000 sigue disponible para debug local.
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     depends_on:
       dragonfly:
         condition: service_healthy
       typesense:
         condition: service_healthy
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    # Varios workers para aguantar concurrencia (cada uno con su propia cache TTL en memoria).
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers ${API_WORKERS:-2}
+    deploy:
+      resources:
+        limits:
+          memory: ${API_MEM_LIMIT:-1g}
 
   dragonfly:
     image: docker.dragonflydb.io/dragonflydb/dragonfly:latest
     command: ["--logtostderr"]
+    # Solo loopback: el broker no debe ser accesible desde internet.
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - dragonfly_data:/data
+    deploy:
+      resources:
+        limits:
+          memory: ${DRAGONFLY_MEM_LIMIT:-1g}
     healthcheck:
       test: ["CMD", "redis-cli", "-h", "127.0.0.1", "ping"]
       interval: 5s
@@ -72,10 +90,15 @@ services:
       - "/data"
       - "--api-key=${ODRANID_TYPESENSE_API_KEY:-localdevkey}"
       - "--enable-cors"
+    # Solo loopback: el índice no debe ser accesible desde internet.
     ports:
-      - "8108:8108"
+      - "127.0.0.1:8108:8108"
     volumes:
       - typesense_data:/data
+    deploy:
+      resources:
+        limits:
+          memory: ${TYPESENSE_MEM_LIMIT:-2g}
     healthcheck:
       test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8108 && printf \"GET /health HTTP/1.1\\r\\nHost: 127.0.0.1\\r\\nConnection: close\\r\\n\\r\\n\" >&3 && grep -q \"\\\"ok\\\":true\" <&3'"]
       interval: 5s
@@ -97,6 +120,10 @@ services:
       typesense:
         condition: service_healthy
     command: celery -A app.celery_app.celery_app worker -Q chatwoot_messages --loglevel=INFO --concurrency=4
+    deploy:
+      resources:
+        limits:
+          memory: ${WORKER_MEM_LIMIT:-1g}
 
   worker_outbound:
     build: .
@@ -110,6 +137,10 @@ services:
       dragonfly:
         condition: service_healthy
     command: celery -A app.celery_app.celery_app worker -Q chatwoot_outbound --loglevel=INFO --concurrency=2
+    deploy:
+      resources:
+        limits:
+          memory: ${WORKER_MEM_LIMIT:-1g}
 
   # Worker dedicado al sync del catálogo (WooCommerce -> Postgres -> Typesense).
   # Aislado de chatwoot_messages para que un sync pesado no demore las respuestas al cliente.
@@ -128,6 +159,10 @@ services:
       typesense:
         condition: service_healthy
     command: celery -A app.celery_app.celery_app worker -Q catalog --loglevel=INFO --concurrency=1
+    deploy:
+      resources:
+        limits:
+          memory: ${CATALOG_WORKER_MEM_LIMIT:-1500m}
 
   beat:
     build: .
@@ -154,14 +189,37 @@ services:
       ODRANID_DATABASE_URL: ${ODRANID_DATABASE_URL:-postgresql://odranid:odranid@postgres:5432/odranid}
       ODRANID_CELERY_BROKER_URL: redis://dragonfly:6379/0
       ODRANID_CELERY_RESULT_BACKEND: redis://dragonfly:6379/1
+    # Loopback + basic auth: el panel de Celery no debe quedar abierto en internet.
     ports:
-      - "5555:5555"
+      - "127.0.0.1:5555:5555"
     depends_on:
       dragonfly:
         condition: service_healthy
-    command: celery -A app.celery_app.celery_app flower --port=5555
+    command: celery -A app.celery_app.celery_app flower --port=5555 --basic-auth=${FLOWER_BASIC_AUTH:-admin:changeme}
+
+  # Reverse proxy con HTTPS automático (Let's Encrypt). Opt-in: solo se levanta con
+  # el perfil "proxy" en producción. Necesita un dominio apuntando al VPS y los puertos
+  # 80/443 libres. Termina TLS y proxea a api:8000 por la red interna (no expone la API
+  # directo). Config en deploy/Caddyfile.
+  caddy:
+    image: caddy:2
+    profiles: ["proxy"]
+    restart: unless-stopped
+    environment:
+      ODRANID_PUBLIC_DOMAIN: ${ODRANID_PUBLIC_DOMAIN:-localhost}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
 
 volumes:
   postgres_data:
   dragonfly_data:
   typesense_data:
+  caddy_data:
+  caddy_config:

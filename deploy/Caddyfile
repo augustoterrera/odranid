@@ -1,0 +1,34 @@
+# Reverse proxy de Odranid. HTTPS automático (Let's Encrypt) para el dominio público.
+# El dominio se inyecta por la variable ODRANID_PUBLIC_DOMAIN desde docker-compose.
+#
+# Solo se publica la API hacia afuera. El webhook de Chatwoot y los endpoints públicos
+# pasan por acá; Postgres / Typesense / Dragonfly / Flower quedan en loopback del host.
+
+{$ODRANID_PUBLIC_DOMAIN} {
+	encode gzip
+
+	# La API corre en la red interna de compose; no se expone su puerto a internet.
+	reverse_proxy api:8000
+
+	# Cabeceras de seguridad básicas.
+	header {
+		Strict-Transport-Security "max-age=31536000;"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		-Server
+	}
+
+	# Rate limiting por IP (opcional): requiere construir Caddy con el plugin
+	# github.com/mholt/caddy-ratelimit (xcaddy). Si lo agregás, descomentá:
+	#
+	# rate_limit {
+	#     zone publica {
+	#         key {remote_host}
+	#         events 60
+	#         window 1m
+	#     }
+	# }
+	#
+	# Mientras tanto, un rate-limit a nivel del firewall del VPS (nftables/ufw) o de
+	# Chatwoot cubre el grueso.
+}
