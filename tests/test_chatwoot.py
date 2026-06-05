@@ -5,7 +5,7 @@ import hmac
 import json
 import unittest
 
-from app.chat.chatwoot import extract_message_event, verify_chatwoot_signature
+from app.chat.chatwoot import extract_message_event, verify_chatwoot_signature, verify_chatwoot_webhook_token
 
 
 class ChatwootWebhookTests(unittest.TestCase):
@@ -41,6 +41,10 @@ class ChatwootWebhookTests(unittest.TestCase):
                 now=1760000000,
             )
         )
+
+    def test_verify_chatwoot_webhook_token(self) -> None:
+        self.assertTrue(verify_chatwoot_webhook_token("secret", "secret"))
+        self.assertFalse(verify_chatwoot_webhook_token("secret", "bad"))
 
     def test_extract_incoming_message_event_with_history(self) -> None:
         payload = {

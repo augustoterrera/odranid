@@ -101,6 +101,14 @@ def verify_chatwoot_signature(
     return hmac.compare_digest(expected, signature)
 
 
+def verify_chatwoot_webhook_token(secret: str | None, token: str | None) -> bool:
+    if not secret:
+        return True
+    if not token:
+        return False
+    return hmac.compare_digest(secret, token)
+
+
 def parse_chatwoot_payload(raw_body: bytes) -> dict[str, Any]:
     try:
         payload = json.loads(raw_body.decode("utf-8"))

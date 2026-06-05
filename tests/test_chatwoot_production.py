@@ -24,10 +24,21 @@ def chatwoot_payload(message_id: int = 10, content: str = "hola") -> dict[str, o
     }
 
 
+class FakeQueryParams(dict[str, str]):
+    def get(self, key: str, default: str | None = None) -> str | None:
+        return super().get(key, default)
+
+
 class FakeRequest:
-    def __init__(self, payload: dict[str, object], headers: dict[str, str] | None = None) -> None:
+    def __init__(
+        self,
+        payload: dict[str, object],
+        headers: dict[str, str] | None = None,
+        query_params: dict[str, str] | None = None,
+    ) -> None:
         self._body = json.dumps(payload).encode("utf-8")
         self.headers = headers or {}
+        self.query_params = FakeQueryParams(query_params or {})
 
     async def body(self) -> bytes:
         return self._body
@@ -145,6 +156,17 @@ class ChatwootProductionTests(unittest.TestCase):
         debounce.assert_called_once_with(123)
         apply_async.assert_called_once()
         run_agent.assert_not_called()
+
+    def test_webhook_accepts_query_token_when_signature_is_missing(self) -> None:
+        store = WebhookStore()
+        main.chat_memory_store = store  # type: ignore[assignment]
+        main.settings.chatwoot_webhook_secret = "secret"
+        with patch.object(chatwoot_tasks, "set_conversation_debounce"), patch.object(
+            chatwoot_tasks.process_chatwoot_conversation, "apply_async"
+        ):
+            response = asyncio.run(main.chatwoot_webhook(FakeRequest(chatwoot_payload(), query_params={"token": "secret"})))
+
+        self.assertEqual(response.status, "queued")
 
     def test_duplicate_event_does_not_create_message_or_task(self) -> None:
         store = WebhookStore(duplicate=True)

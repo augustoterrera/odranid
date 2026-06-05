@@ -20,6 +20,7 @@ from .chat.chatwoot import (
     extract_message_event,
     parse_chatwoot_payload,
     verify_chatwoot_signature,
+    verify_chatwoot_webhook_token,
 )
 from .chat.chatwoot_service import chatwoot_event_key, persist_incoming_chatwoot_event
 from .core.config import settings
@@ -154,6 +155,11 @@ async def chatwoot_webhook(request: Request) -> ChatwootWebhookResponse:
         timestamp=request.headers.get("x-chatwoot-timestamp"),
         tolerance_seconds=settings.chatwoot_webhook_timestamp_tolerance_seconds,
     )
+    if not is_verified:
+        is_verified = verify_chatwoot_webhook_token(
+            secret=settings.chatwoot_webhook_secret,
+            token=request.query_params.get("token"),
+        )
     if not is_verified:
         raise HTTPException(status_code=401, detail="Invalid Chatwoot webhook signature")
 
