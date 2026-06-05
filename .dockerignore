@@ -6,6 +6,8 @@ __pycache__
 .cache
 reports/
 tests/
+data/
+docs/
 scripts/analyze_shadow_report.py
 scripts/replay_chatwoot_conversations.py
 .env
