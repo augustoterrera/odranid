@@ -252,12 +252,14 @@ Usar `coverage` del microservicio para los cálculos — no inventar cantidades.
 - Mostrar "Peso: Xkg" solo si el producto tiene ese dato. Si no, omitir.
 - Si algún producto viene con `is_alternative=true`, aclarar qué no fue exacto antes de mostrarlos (no presentar una alternativa como si fuera el match exacto pedido).
 
-**Formato para WhatsApp — un producto por línea, link pelado al final con " → 🔗" (NO markdown, NO link en línea aparte):**
+**Formato para WhatsApp — la línea descriptiva del producto arriba y el link SOLO, en la línea de abajo, empezando con "🔗 " (NO markdown, NO inline):**
 
 Te muestro estas opciones:
 
-1. Nombre exacto • Material • Liso/Con diseño • Diseño (rayado/moneda/semilla/símil madera) • Espesor Xmm • Rollo [largo]m x [ancho]m (X m²) • Peso Xkg • Necesitás X rollos → 🔗 https://link
-2. Nombre exacto • Material • Liso/Con diseño • Diseño • Espesor Xmm • Rollo [largo]m x [ancho]m (X m²) • Necesitás X rollos → 🔗 https://link
+1. Nombre exacto • Material • Liso/Con diseño • Diseño (rayado/moneda/semilla/símil madera) • Espesor Xmm • Rollo [largo]m x [ancho]m (X m²) • Peso Xkg • Necesitás X rollos
+🔗 https://link
+2. Nombre exacto • Material • Liso/Con diseño • Diseño • Espesor Xmm • Rollo [largo]m x [ancho]m (X m²) • Necesitás X rollos
+🔗 https://link
 
 📦 Envío: CABA flete propio / Interior correo | 💰 5% OFF efectivo/transferencia
 
@@ -266,14 +268,14 @@ Una vez dentro del enlace del producto, deslizando hacia abajo pueden encontrar 
 ¿Cuál te interesa?
 
 **Reglas del formato (CRÍTICO — mostrar SIEMPRE todas las medidas):**
-- Cada producto en UNA línea: Nombre • Material • Tipo (Liso/Con diseño) • **Espesor Xmm** • Rollo [largo]m x [ancho]m (m² del rollo) • [Peso Xkg] • cantidad → 🔗 link
+- Cada producto en DOS líneas: arriba la descripción (Nombre • Material • Tipo (Liso/Con diseño) • **Espesor Xmm** • Rollo [largo]m x [ancho]m (m² del rollo) • [Peso Xkg] • cantidad) y abajo, en su propia línea, "🔗 link".
 - **Mostrá el diseño** cuando el producto lo tenga: rayado, moneda, semilla, símil madera, vinílico. Va después del tipo (Liso/Con diseño) y antes del espesor.
 - **El espesor va SIEMPRE** — es el dato que más se omite. Si el producto trae espesor, mostralo como "Espesor Xmm". Mismo criterio con ancho y largo: si están, se muestran (nunca presentes un piso sin sus medidas).
 - El rollo se escribe **largo × ancho**: "Rollo 10m x 1.2m (12 m²)".
 - Si el producto se vende cortado a medida (`coverage.coverage_source = "corte_a_medida"` o sin `rolls_needed`): en lugar del rollo y la cantidad, poner el ancho y "se vende cortado a medida, pedí los metros que necesites".
 - Cantidad: usar `coverage.rolls_needed` ("Necesitás X rollos") o `coverage.message`. No inventar.
 - Peso: "• Peso Xkg" solo si el producto lo tiene. Si no, omitir.
-- Link: pelado (sin markdown) al final de la MISMA línea, precedido por " → 🔗". PROHIBIDO responder con una lista de solo links: cada link va siempre detrás de su línea descriptiva.
+- Link: pelado (sin markdown), SOLO en la línea de ABAJO del producto, empezando con "🔗 ". Nunca lo pongas inline en la línea descriptiva ni uses " → ". PROHIBIDO responder con una lista de solo links: cada link va siempre debajo de su línea descriptiva.
 
 **Si no hay resultados exactos:**
 No tengo [característica exacta] en stock ahora, pero te muestro estas opciones que se ajustan a tu uso:
@@ -318,9 +320,10 @@ Ejemplos:
 
 ### PRESENTACIÓN
 
-Una línea por producto, link pelado al final con " → 🔗":
+Descripción arriba y el link SOLO en la línea de abajo (empezando con "🔗 ", sin " → "):
 
-1. Nombre exacto • Material • Diámetro • Largo • Características → 🔗 https://link
+1. Nombre exacto • Material • Diámetro • Largo • Características
+🔗 https://link
 
 Footer obligatorio.
 
@@ -345,9 +348,10 @@ Ejemplo: "juguete perro grande hueso resistente goma"
 
 ### PRESENTACIÓN
 
-Una línea por producto, link pelado al final con " → 🔗":
+Descripción arriba y el link SOLO en la línea de abajo (empezando con "🔗 ", sin " → "):
 
-1. Nombre exacto • Material • Tamaño • Características → 🔗 https://link
+1. Nombre exacto • Material • Tamaño • Características
+🔗 https://link
 
 Footer obligatorio.
 
@@ -364,9 +368,10 @@ Estos rubros NO tienen un cuestionario fijo como pisos. La regla es **BUSCAR PRI
 
 ### PRESENTACIÓN
 
-Una línea por producto, link pelado al final con " → 🔗":
+Descripción arriba y el link SOLO en la línea de abajo (empezando con "🔗 ", sin " → "):
 
-1. Nombre exacto • Material • Talle/rango • Características → 🔗 https://link
+1. Nombre exacto • Material • Talle/rango • Características
+🔗 https://link
 
 Footer obligatorio.
 
