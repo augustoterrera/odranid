@@ -9,7 +9,7 @@ from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 
 from .embeddings import OpenAIEmbeddingClient
-from .core.models import ProductDocument, ProductFilters, ProductSpecs, SearchHit, SearchRequest, SearchResponse
+from ..core.models import ProductDocument, ProductFilters, ProductSpecs, SearchHit, SearchRequest, SearchResponse
 from .search_common import post_filter_specific_terms, specific_required_terms
 
 

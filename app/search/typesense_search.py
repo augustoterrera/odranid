@@ -15,10 +15,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from .catalog.domain_synonyms import compatible_designs
+from ..catalog.domain_synonyms import compatible_designs
 from .embeddings import OpenAIEmbeddingClient
-from .catalog.footwear import talle_excluded
-from .core.models import ProductDocument, ProductFilters, ProductSpecs, SearchHit, SearchRequest, SearchResponse
+from ..catalog.footwear import talle_excluded
+from ..core.models import ProductDocument, ProductFilters, ProductSpecs, SearchHit, SearchRequest, SearchResponse
 from .typesense_index import QUERY_BY_FIELDS
 
 # Attributes that influence ranking but never exclude. Weight = how much a match

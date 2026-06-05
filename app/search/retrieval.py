@@ -4,8 +4,8 @@ import math
 import re
 from collections import Counter
 
-from .core.models import ProductDocument, ProductFilters, SearchHit, SearchRequest, SearchResponse
-from .catalog.normalization import norm_text
+from ..core.models import ProductDocument, ProductFilters, SearchHit, SearchRequest, SearchResponse
+from ..catalog.normalization import norm_text
 from .search_common import post_filter_specific_terms
 
 

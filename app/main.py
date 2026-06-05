@@ -24,8 +24,8 @@ from .chatwoot import (
 from .chatwoot_service import chatwoot_event_key, persist_incoming_chatwoot_event
 from .core.config import settings
 from .catalog.coverage import enrich_search_response
-from .db_search import DatabaseCatalogSearch, DatabaseSearchError
-from .embeddings import OpenAIEmbeddingClient
+from .search.db_search import DatabaseCatalogSearch, DatabaseSearchError
+from .search.embeddings import OpenAIEmbeddingClient
 from .core.models import (
     AgentRequest,
     AgentResponse,
@@ -37,10 +37,10 @@ from .core.models import (
     SearchResponse,
 )
 from .catalog.normalization import extract_woocommerce_products, normalize_product
-from .rag_precontext import build_rag_precontext
-from .retrieval import CatalogSearch
-from .typesense_client import build_typesense_client
-from .typesense_search import TypesenseCatalogSearch
+from .search.rag_precontext import build_rag_precontext
+from .search.retrieval import CatalogSearch
+from .search.typesense_client import build_typesense_client
+from .search.typesense_search import TypesenseCatalogSearch
 from .catalog.woocommerce import build_client_from_settings
 
 app = FastAPI(title=settings.app_name)

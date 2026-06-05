@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import typesense
 
-from .core.config import settings
+from ..core.config import settings
 
 
 class TypesenseConfigurationError(RuntimeError):

@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from app.core.config import settings
-from app.typesense_client import TypesenseHealthcheckError, healthcheck
+from app.search.typesense_client import TypesenseHealthcheckError, healthcheck
 
 
 def test_typesense_healthcheck_smoke() -> None:

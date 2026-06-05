@@ -13,10 +13,10 @@ from typing import Any
 
 from ..core.config import settings
 from ..core.models import ProductDocument
-from ..db_search import product_from_row
-from ..embeddings import OpenAIEmbeddingClient, chunked
-from ..typesense_client import build_typesense_client
-from ..typesense_index import sync_collection
+from ..search.db_search import product_from_row
+from ..search.embeddings import OpenAIEmbeddingClient, chunked
+from ..search.typesense_client import build_typesense_client
+from ..search.typesense_index import sync_collection
 from .normalization import extract_woocommerce_products, normalize_product
 from .postgres_store import PostgresStoreError, build_postgres_store_from_settings
 from .woocommerce import build_client_from_settings

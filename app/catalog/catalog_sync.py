@@ -9,7 +9,7 @@ from typing import Any
 
 from ..core.config import settings
 from ..core.models import ProductDocument
-from ..embeddings import OpenAIEmbeddingClient, chunked
+from ..search.embeddings import OpenAIEmbeddingClient, chunked
 from .normalization import extract_woocommerce_products, normalize_product
 from .postgres_store import build_postgres_store_from_settings
 from .woocommerce import build_client_from_settings

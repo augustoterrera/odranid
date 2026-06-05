@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 
 from app.core.models import AgentMessage, AgentRequest, ProductIntakeResponse
-from app.rag_precontext import build_rag_precontext
+from app.search.rag_precontext import build_rag_precontext
 
 
 class RagPrecontextTests(unittest.TestCase):

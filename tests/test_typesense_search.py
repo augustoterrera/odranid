@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 
 from app.core.models import ProductFilters, SearchRequest
-from app.typesense_search import (
+from app.search.typesense_search import (
     TypesenseCatalogSearch,
     build_filter_by,
     build_search_params,

@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 
 from app.core.models import ProductDocument, ProductSpecs
-from app.typesense_index import (
+from app.search.typesense_index import (
     EMBEDDING_DIM,
     collection_schema,
     index_documents,
