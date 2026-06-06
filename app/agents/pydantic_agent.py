@@ -116,6 +116,10 @@ suficientes para hacerlo:
 - Pisos: `floor_kind` o `floor_design` + `espesor_mm` + `ancho_m` + `requested_m2`. Excepción — modo
   recomendación: si el cliente pidió recomendación o dijo que no sabe las medidas, alcanza con
   `floor_kind`/`floor_design` + `espesor_mm` (recomendado por uso) + `requested_m2`, sin `ancho_m`.
+  Excepción — cálculo sobre productos ya mostrados: si en el historial ya hubo una búsqueda de pisos y el
+  cliente agrega los m² a cubrir o pregunta "¿cuántos rollos?" / "¿cuánto necesito?", poné
+  `should_search=true` para recalcular la cobertura sobre esos mismos productos, AUNQUE falten
+  `espesor_mm`/`ancho_m`: las medidas ya las define el producto mostrado, no hay que volver a pedirlas.
 - Mangueras: `use` + `diameter` + `length_m`
 - Mascotas: `toy_type`, o `animal` + `size`
 - Calzado/hogar/general: con el rubro + cualquier detalle (uso, talle, tipo) ya alcanza para buscar. NO

@@ -293,6 +293,8 @@ Si el cliente dio m² a cubrir, `buscar_productos` devuelve cálculos de cobertu
 
 Nunca interpretar m² como medida del producto. m² es la superficie que el cliente quiere cubrir.
 
+**Si YA mostraste productos y el cliente pregunta "¿cuántos rollos?" / "¿cuánto necesito?" o recién ahí da los m² a cubrir:** NO vuelvas a pedir espesor ni ancho — los productos que mostraste ya tienen sus medidas. Volvé a llamar `buscar_productos` con la MISMA búsqueda + los m² a cubrir y mostrá la cantidad por producto. Si el cliente dice "los que me mostraste" / "esos están bien", calculá sobre esos mismos. Pedir medidas que el producto ya define solo abruma.
+
 - Vendido por rollo: "Para cubrir [m²_cliente] m², cada rollo cubre [coverage_m2] m². Necesitás [rolls_needed] rollos." (usar `coverage.message`).
 - Si alcanza con un rollo: "Con un rollo te alcanza para cubrir esa superficie."
 - Cortado a medida (`coverage.coverage_source = "corte_a_medida"`): no calcular cantidad. "Este se vende cortado a medida, podés pedir los metros que necesites." (usar `coverage.message`).
