@@ -343,6 +343,55 @@ class PydanticAgentTests(unittest.TestCase):
         self.assertEqual(response.tool_calls[0].name, "buscar_productos")
         self.assertEqual(len(seen_requests), 1)
 
+    def test_agent_reruns_forcing_presentation_when_recommendation_hides_products(self) -> None:
+        # En modo recomendación el agente buscó y trajo productos, pero respondió pidiendo el ancho
+        # en vez de mostrarlos. El guard debe re-ejecutar forzando la presentación.
+        def fake_search(request: SearchRequest) -> SearchResponse:
+            return SearchResponse(
+                query=request.query,
+                total_catalog_size=1,
+                hits=[
+                    SearchHit(
+                        product=ProductDocument(
+                            id=1,
+                            title="Piso Vinilico Madera",
+                            link="https://odranid.com/producto/piso-vinilico-madera/",
+                            rubro="pisos",
+                            category="pisos_vinilicos",
+                            floor_kind="diseno",
+                            floor_design="simil_madera",
+                            material="PVC",
+                            specs=ProductSpecs(espesor_mm=1.2, ancho_m=2, largo_m=5),
+                            content="Piso vinilico simil madera",
+                        ),
+                        score=0.9,
+                    )
+                ],
+            )
+
+        response = run_pydantic_agent(
+            request=AgentRequest(message="Que me recomendas para mi oficina de 12m2", limit=5),
+            search=fake_search,
+            api_key="sk-test",
+            catalog_context="CATALOGO",
+            pydantic_model=ForcePresentRetryModel(
+                tool_args={"query_semantica": "piso vinilico simil madera oficina cubrir 12m2", "rubro": "pisos"},
+                hidden_answer="Para tu oficina te recomiendo simil madera 2mm. ¿Qué ancho preferís?",
+                presented_answer="\n".join(
+                    [
+                        "Para tu oficina te recomiendo estas opciones:",
+                        "",
+                        "1. Piso Vinilico Madera • PVC • Con diseño • Símil madera • Espesor 1.2mm",
+                        "🔗 https://odranid.com/producto/piso-vinilico-madera/",
+                    ]
+                ),
+            ),
+        )
+
+        self.assertIn("Piso Vinilico Madera", response.answer)
+        self.assertIn("🔗 https://odranid.com.ar/producto/piso-vinilico-madera/", response.answer)
+        self.assertNotIn("¿Qué ancho preferís?", response.answer)
+
     def test_agent_keeps_fixed_advisor_link_in_tool_backed_answer(self) -> None:
         def fake_search(request: SearchRequest) -> SearchResponse:
             return SearchResponse(query=request.query, total_catalog_size=0, hits=[])
@@ -405,6 +454,42 @@ class ForceSearchRetryModel(TestModel):
         if self._FORCE_MARKER in str(messages):
             self.call_tools = ["buscar_productos"]
             self.custom_output_args = self._intake_output(self.searched_answer)
+        return await super().request(messages, model_settings, model_request_parameters)
+
+    def gen_tool_args(self, tool_def: ToolDefinition) -> object:
+        if tool_def.name == "buscar_productos":
+            return self.tool_args
+        return super().gen_tool_args(tool_def)
+
+
+class ForcePresentRetryModel(TestModel):
+    """Recommendation turn: first run searches (hits) but answers a question without showing
+    products; the forced re-run presents them. The force_present re-run is detected by the marker
+    that ``build_user_prompt`` appends.
+    """
+
+    _FORCE_MARKER = "PRESENTÁ las opciones AHORA"
+
+    def __init__(self, *, tool_args: dict[str, object], hidden_answer: str, presented_answer: str) -> None:
+        super().__init__(call_tools=["buscar_productos"], custom_output_args=self._output(hidden_answer))
+        self.tool_args = tool_args
+        self.hidden_answer = hidden_answer
+        self.presented_answer = presented_answer
+
+    @staticmethod
+    def _output(answer: str) -> dict[str, object]:
+        return {
+            "intake": {
+                "intent": "pisos",
+                "known": {"rubro": "pisos", "recommendation": True},
+                "should_search": True,
+            },
+            "answer": answer,
+        }
+
+    async def request(self, messages, model_settings, model_request_parameters):  # type: ignore[override]
+        if self._FORCE_MARKER in str(messages):
+            self.custom_output_args = self._output(self.presented_answer)
         return await super().request(messages, model_settings, model_request_parameters)
 
     def gen_tool_args(self, tool_def: ToolDefinition) -> object:

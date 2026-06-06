@@ -151,12 +151,16 @@ debe ser `true`. Cuando falte información, `should_search=false`, completá `mi
 
 5. Recomendaciones por uso: cuando el cliente pide recomendación explícita ("¿qué me recomendás?",
    "no sé qué elegir", "no sé las medidas", "ayudame a elegir", "¿cuál me conviene?") o dice que no
-   conoce las especificaciones, te está DELEGANDO la decisión: completá `known` con los valores
-   recomendados por uso y poné `should_search=true` (no sigas preguntando esas medidas). Defaults:
+   conoce las especificaciones, te está DELEGANDO la decisión: poné `known["recommendation"]=true`,
+   completá `known` con los valores recomendados por uso y poné `should_search=true` (no sigas
+   preguntando esas medidas). Defaults:
    - gimnasio, danza, escenario, alto tránsito o industrial: `espesor_mm=3`.
    - hogar, dormitorio, oficina o comercio: `espesor_mm=2`.
    - material: goma/caucho para uso intenso (gimnasio, industrial); PVC para tránsito medio (oficina,
      comercio, hogar). No pises `floor_kind`/`floor_design` si el cliente ya lo eligió (ej. simil madera).
+   IMPORTANTE — no impongas espesor si el cliente ya eligió un diseño/producto concreto (ej. simil
+   madera): NO setees `espesor_mm` por defecto en ese caso; dejá que la búsqueda traiga los espesores
+   que ese diseño realmente tiene. El espesor por uso solo aplica cuando el cliente no fijó un producto.
    El `ancho_m` NO hace falta para recomendar: es un atributo del producto. No bloquees la búsqueda
    esperando el ancho cuando el cliente pidió que recomendaras o no conoce la medida.
 
@@ -257,7 +261,64 @@ def run_agent_enforcing_search(
         )
         deps = build_agent_deps(request, search)
         output = _run_agent_once(agent, request, deps, force_search=True)
+
+    # En modo recomendación, si buscó y trajo productos pero NO los presentó (los retuvo para
+    # pedir el ancho u otra medida), el turno incumple la regla: re-ejecutar forzando la
+    # presentación. El cliente que delega la decisión quiere ver las opciones, no más preguntas.
+    if (
+        is_recommendation_request(request, output)
+        and search_has_hits(deps.search_responses)
+        and not answer_presents_any_product(output.answer, deps.search_responses)
+    ):
+        logger.warning(
+            "agent_recommendation_hid_products",
+            extra={"latest_message": request.message},
+        )
+        retry_deps = build_agent_deps(request, search)
+        retry_output = _run_agent_once(agent, request, retry_deps, force_present=True)
+        if search_has_hits(retry_deps.search_responses) and answer_presents_any_product(
+            retry_output.answer, retry_deps.search_responses
+        ):
+            output, deps = retry_output, retry_deps
     return output, deps
+
+
+_RECOMMENDATION_RE = re.compile(
+    r"recomend|no\s+s[eé]\b|cu[aá]l\s+me\s+conviene|ayud[aá](?:me)?\s+a\s+elegir|qu[eé]\s+me\s+conviene|no\s+entiendo",
+    re.IGNORECASE,
+)
+
+
+def is_recommendation_request(request: AgentRequest, output: OdranidAgentOutput) -> bool:
+    """El cliente delegó la decisión (pidió recomendación o dijo que no sabe).
+
+    Señal primaria: el flag `recommendation` que el intake marca al delegar. Backup
+    determinístico sobre el mensaje, para que el guard sea confiable aunque el LLM no lo marque.
+    """
+    known = (output.intake.known if output.intake else None) or {}
+    if known.get("recommendation"):
+        return True
+    return bool(_RECOMMENDATION_RE.search(request.message or ""))
+
+
+def search_has_hits(search_responses: list[SearchResponse]) -> bool:
+    return any(response.hits for response in search_responses)
+
+
+def answer_presents_any_product(answer: str, search_responses: list[SearchResponse]) -> bool:
+    text = (answer or "").lower()
+    for response in search_responses:
+        for hit in response.hits:
+            slug = product_link_slug(hit.product.link)
+            if slug and slug in text:
+                return True
+    return False
+
+
+def product_link_slug(link: str | None) -> str:
+    if not link:
+        return ""
+    return link.rstrip("/").rsplit("/", 1)[-1].lower()
 
 
 def _run_agent_once(
@@ -266,9 +327,13 @@ def _run_agent_once(
     deps: OdranidAgentDeps,
     *,
     force_search: bool = False,
+    force_present: bool = False,
 ) -> OdranidAgentOutput:
     try:
-        result = agent.run_sync(build_user_prompt(request, force_search=force_search), deps=deps)
+        result = agent.run_sync(
+            build_user_prompt(request, force_search=force_search, force_present=force_present),
+            deps=deps,
+        )
     except Exception as exc:
         raise AgentError(f"PydanticAI agent run failed: {exc}") from exc
     return result.output
@@ -378,7 +443,7 @@ def build_pydantic_system_prompt(prompt_file: Path, catalog_context: str) -> str
     return "\n\n".join([build_system_prompt(prompt_file, catalog_context), PYDANTIC_AGENT_INSTRUCTIONS, INTAKE_EXTRACTION_RULES])
 
 
-def build_user_prompt(request: AgentRequest, *, force_search: bool = False) -> str:
+def build_user_prompt(request: AgentRequest, *, force_search: bool = False, force_present: bool = False) -> str:
     payload = {
         "latest_user_message": request.message,
         "history": [message.model_dump() for message in visible_history(request.history)],
@@ -396,6 +461,13 @@ def build_user_prompt(request: AgentRequest, *, force_search: bool = False) -> s
             "confirme lo que vas a buscar, ni repitas el pedido en primera persona "
             "(ej. \"Busco pisos liso 2mm...\"): eso es una query interna, no un mensaje al cliente. "
             "Ejecutá la herramienta."
+        )
+    if force_present:
+        lines.append(
+            "IMPORTANTE: el cliente te pidió una recomendación y hay productos para mostrarle. "
+            "Llamá `buscar_productos` y PRESENTÁ las opciones AHORA con el formato de lista "
+            "(nombre, specs, link). PROHIBIDO pedir el ancho, pedir más medidas o decir "
+            "\"para mostrarte productos exactos\": el cliente quiere ver las opciones ya y elige sobre ellas."
         )
     return "\n".join(lines)
 
