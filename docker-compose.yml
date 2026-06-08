@@ -64,13 +64,16 @@ services:
       - proxy      # red de Traefik (externa)
     labels:
       - "traefik.enable=true"
-      - "traefik.docker.network=proxy"
+      # Nombre, entrypoint y certresolver del Traefik existente del VPS. Si tu Traefik usa
+      # otros nombres, sobrescribir TRAEFIK_NETWORK / TRAEFIK_ENTRYPOINT / TRAEFIK_CERTRESOLVER
+      # en .env (no hace falta editar este archivo). Defaults = convención más común.
+      - "traefik.docker.network=${TRAEFIK_NETWORK:-proxy}"
       # SOLO el webhook de Chatwoot queda público (incluye /webhooks/chatwoot/health).
       # El resto (/agent, /search, /admin/*) NO se rutea: se accede por la tailnet.
       # Para exponer TODO el dominio, reemplazar la rule por: Host(`${ODRANID_PUBLIC_DOMAIN}`)
       - "traefik.http.routers.odranid.rule=Host(`${ODRANID_PUBLIC_DOMAIN}`) && PathPrefix(`/webhooks`)"
-      - "traefik.http.routers.odranid.entrypoints=websecure"
-      - "traefik.http.routers.odranid.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.odranid.entrypoints=${TRAEFIK_ENTRYPOINT:-websecure}"
+      - "traefik.http.routers.odranid.tls.certresolver=${TRAEFIK_CERTRESOLVER:-letsencrypt}"
       - "traefik.http.services.odranid.loadbalancer.server.port=8000"
     deploy:
       resources:
@@ -217,9 +220,11 @@ services:
 # api). No se incluye un proxy propio para no competir por los puertos 80/443.
 
 networks:
-  # Red externa donde corre Traefik. Creada fuera de este compose: docker network create proxy
+  # Red externa donde corre Traefik. Creada fuera de este compose: docker network create proxy.
+  # Si el Traefik del VPS usa otra red, setear TRAEFIK_NETWORK en .env (no editar acá).
   proxy:
     external: true
+    name: ${TRAEFIK_NETWORK:-proxy}
 
 volumes:
   postgres_data:
