@@ -627,11 +627,15 @@ class ChatMemoryStore:
         key = (os.getpid(), self.database_url)
         pool = _POOLS.get(key)
         if pool is None or pool.closed:
+            # autocommit=True: cada statement se confirma al instante. Evita que un
+            # proceso de larga vida (api/worker) deje transacciones abiertas sin commitear
+            # (las escrituras quedaban invisibles y se descartaban). Los métodos que
+            # necesitan atomicidad multi-statement usan `with conn.transaction()` explícito.
             pool = ConnectionPool(
                 self.database_url,
                 min_size=1,
                 max_size=5,
-                kwargs={"row_factory": dict_row},
+                kwargs={"row_factory": dict_row, "autocommit": True},
                 open=True,
             )
             _POOLS[key] = pool
