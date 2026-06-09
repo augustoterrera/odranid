@@ -11,9 +11,9 @@ tome como pendientes (no queremos responder mensajes históricos), y con su crea
 real para preservar el orden.
 
 Uso (dentro del contenedor api, que ya tiene el .env cargado):
-  docker compose run --rm api python scripts/backfill_chatwoot_history.py
-  docker compose run --rm api python scripts/backfill_chatwoot_history.py --status open
-  docker compose run --rm api python scripts/backfill_chatwoot_history.py --dry-run --limit 5
+  docker compose run --rm api python scripts/backfill_chatwoot_history.py --days 3
+  docker compose run --rm api python scripts/backfill_chatwoot_history.py            # todas
+  docker compose run --rm api python scripts/backfill_chatwoot_history.py --days 3 --dry-run
 """
 from __future__ import annotations
 
@@ -127,12 +127,35 @@ def usable_text(message: dict[str, Any]) -> str | None:
     return content or None
 
 
+def conversation_last_activity(conv: dict[str, Any]) -> float | None:
+    """Timestamp (unix) de la última actividad de la conversación, para filtrar por fecha.
+    Usa last_activity_at/timestamp del objeto; si no están, cae al created_at más nuevo
+    de los mensajes que vienen embebidos en el listado."""
+    for key in ("last_activity_at", "timestamp"):
+        value = conv.get(key)
+        if isinstance(value, (int, float)) and value > 0:
+            return float(value)
+    inline = conv.get("messages") if isinstance(conv.get("messages"), list) else []
+    stamps = [
+        m["created_at"]
+        for m in inline
+        if isinstance(m, dict) and isinstance(m.get("created_at"), (int, float))
+    ]
+    return float(max(stamps)) if stamps else None
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Backfill de conversaciones de Chatwoot a la memoria de odranid.")
     parser.add_argument(
         "--status",
         default="all",
         help="Estado a migrar: open|pending|snoozed|resolved|all (default: all).",
+    )
+    parser.add_argument(
+        "--days",
+        type=int,
+        default=0,
+        help="Solo conversaciones con actividad en los últimos N días (0 = sin filtro de fecha).",
     )
     parser.add_argument("--limit", type=int, default=0, help="Máximo de conversaciones (0 = sin tope). Útil para probar.")
     parser.add_argument("--dry-run", action="store_true", help="No escribe en la DB; solo cuenta qué migraría.")
@@ -144,6 +167,7 @@ def main() -> int:
 
     statuses = ALL_STATUSES if args.status == "all" else [args.status]
     account_id = settings.chatwoot_account_id
+    cutoff = (time.time() - args.days * 86400) if args.days > 0 else None
 
     seen_conversations: set[int] = set()
     convs_done = 0
@@ -155,6 +179,10 @@ def main() -> int:
             if not isinstance(conv_id, int) or conv_id in seen_conversations:
                 continue
             seen_conversations.add(conv_id)
+            if cutoff is not None:
+                activity = conversation_last_activity(conv)
+                if activity is None or activity < cutoff:
+                    continue
             if args.limit and convs_done >= args.limit:
                 break
 
