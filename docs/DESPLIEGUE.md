@@ -95,7 +95,7 @@ docker compose run --rm api python scripts/sync_catalog.py
 
 # 5b. Postgres -> Typesense (build inicial completo del índice)
 docker compose run --rm api python -c \
-  "from app.typesense_sync import run_typesense_sync; print(run_typesense_sync(recreate=True))"
+  "from app.catalog.typesense_sync import run_typesense_sync; print(run_typesense_sync(recreate=True))"
 ```
 
 A partir de acá, `beat` mantiene ambos syncs solos: WooCommerce→Postgres cada

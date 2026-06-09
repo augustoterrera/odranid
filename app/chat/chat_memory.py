@@ -290,15 +290,16 @@ class ChatMemoryStore:
         raw_payload: dict[str, Any] | None = None,
         agent_response: AgentResponse | None = None,
         processing_status: str | None = None,
+        created_at: Any = None,
     ) -> None:
         with self._connect() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     """
                     insert into public.chat_messages (
-                      conversation_id, external_message_id, role, content, raw_payload, tool_calls, processing_status
+                      conversation_id, external_message_id, role, content, raw_payload, tool_calls, processing_status, created_at
                     )
-                    values (%s, %s, %s, %s, %s, %s, coalesce(%s, 'processed'))
+                    values (%s, %s, %s, %s, %s, %s, coalesce(%s, 'processed'), coalesce(%s::timestamptz, now()))
                     on conflict (conversation_id, external_message_id, role) do update set
                       content = excluded.content,
                       raw_payload = excluded.raw_payload,
@@ -313,6 +314,7 @@ class ChatMemoryStore:
                         Jsonb(raw_payload or {}),
                         Jsonb([trace.model_dump() for trace in agent_response.tool_calls] if agent_response else []),
                         processing_status,
+                        created_at,
                     ),
                 )
 
