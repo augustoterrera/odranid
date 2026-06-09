@@ -11,7 +11,7 @@ def post_filter_specific_terms(query: str, hits: list[SearchHit], limit: int) ->
     if not terms:
         return hits[:limit]
 
-    filtered = [hit for hit in hits if all(term in searchable_product_text(hit.product) for term in terms)]
+    filtered = [hit for hit in hits if all(specific_term_matches(term, searchable_product_text(hit.product)) for term in terms)]
     return filtered[:limit]
 
 
@@ -35,6 +35,21 @@ def required_hose_terms(text: str) -> list[str]:
     for match in re.finditer(r"\b(\d+\s*/\s*\d+)\b", text):
         terms.append(match.group(1).replace(" ", ""))
 
+    for match in re.finditer(r"\b(\d+(?:[.,]\d+)?)\s*mm\b", text):
+        value = norm_num(match.group(1))
+        if value is not None:
+            terms.append(rf"re:(?<![0-9]){value:g}\s*mm\b")
+
+    for match in re.finditer(r"\b(\d+(?:[.,]\d+)?)\s*(?:interno|inter|int)\b", text):
+        value = norm_num(match.group(1))
+        if value is not None and value >= 10:
+            terms.append(rf"re:(?<![0-9]){value:g}\s*mm\b")
+
+    for match in re.finditer(r"\b(\d+(?:[.,]\d+)?)\s*cm\b", text):
+        value = norm_num(match.group(1))
+        if value is not None:
+            terms.append(rf"re:(?<![0-9]){value:g}\s*cm\b|(?<![0-9]){value * 10:g}\s*mm\b")
+
     length_match = re.search(r"\b(\d+(?:[.,]\d+)?)\s*(?:m|mt|mts|metro|metros)\b", text)
     if length_match:
         value = norm_num(length_match.group(1))
@@ -42,6 +57,12 @@ def required_hose_terms(text: str) -> list[str]:
             terms.append(f"{value:g}")
 
     return terms
+
+
+def specific_term_matches(term: str, text: str) -> bool:
+    if term.startswith("re:"):
+        return bool(re.search(term[3:], text))
+    return term in text
 
 
 def searchable_product_text(product: ProductDocument) -> str:

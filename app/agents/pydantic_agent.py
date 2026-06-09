@@ -17,6 +17,7 @@ from pydantic_ai.providers.openai import OpenAIProvider
 from .catalog_helpers import AgentError, build_system_prompt, canonical_product_link, clamp_int, compact_search_response, format_number
 from ..catalog.coverage import calculate_coverage, extract_requested_m2
 from ..catalog.footwear import extract_requested_talle
+from ..catalog.product_links import extract_product_slugs
 from ..core.models import (
     AgentMessage,
     AgentRequest,
@@ -46,6 +47,7 @@ class OdranidAgentDeps:
     latest_message: str = ""
     tool_calls: list[AgentToolTrace] = field(default_factory=list)
     search_responses: list[SearchResponse] = field(default_factory=list)
+    linked_product_responses: list[SearchResponse] = field(default_factory=list)
 
 
 PYDANTIC_AGENT_INSTRUCTIONS = """\
@@ -53,12 +55,50 @@ Además de responder al cliente, devolvé siempre un `intake` estructurado compa
 - `intent`, `known`, `missing`, `should_search`, `next_question`, `confidence`.
 - `known` conserva los mismos nombres de slots ya usados por Odranid.
 
+`latest_user_message` puede traer varios mensajes pendientes unidos con saltos de línea, en orden cronológico.
+Leelos de arriba hacia abajo: las líneas de abajo son más nuevas y pueden corregir o precisar las de arriba.
+Cuando el primer texto viene de "Vengo de la tienda online..." y después el cliente escribe "estoy interesada en...",
+la descripción escrita por el cliente después tiene prioridad sobre el título/link inicial de la tienda.
+En pisos, una medida escrita como "1.00x10", "1 x 10", "1,00 x 10" o similar significa ancho 1.00 m
+por largo 10 m. Si aparece después de un título/link con otro ancho, reemplaza el ancho anterior.
+
+Cuando el user prompt trae `linked_products_from_web`, esos productos fueron resueltos desde la DB a partir
+de links de Odranid enviados por la web. Tratá al cliente como interesado en ese producto real: usá su título,
+link y specs como contexto confiable. Si el cliente pregunta algo operativo (envío/costo/pago), respondé sobre
+ese producto sin abrir un cuestionario ni mostrar alternativas. Si los datos escritos por el cliente después del
+link corrigen alguna medida del producto detectado, no mezcles ambas medidas: aclaralo o priorizá lo último que
+escribió el cliente.
+Ejemplo: si el link resuelto es "ancho 1.40m" pero después el cliente escribe "1.00x10 no PVC", respondé
+"veo que venís del producto de 1.40m y también mencionás 1m x 10m no PVC" antes de derivar/cotizar.
+
 Cuando busques productos, llamá `buscar_productos` con argumentos estructurados. No escondas filtros dentro
 de una query libre: emití rubro, tipo/floor_kind/floor_design, espesor_mm, ancho_m, material, color, tags,
 requested_m2 y query_semantica cuando correspondan.
 
 Si no hace falta buscar, `answer` debe ser la respuesta final breve. Si falta información, `answer` puede ser
 la `next_question`.
+
+Prioridad de respuesta final para consultas operativas:
+- Si el cliente pregunta por un producto concreto y además quiere retirar hoy, buscá el producto si tenés datos
+  suficientes. Si existe, mencioná el producto encontrado y su link, pero NO prometas "podés retirar hoy".
+  Terminá siempre con asesor + dirección/horario:
+  "Para confirmar disponibilidad y coordinar el retiro hoy, comunicate con un asesor: https://wa.me/5491125539459
+  Estamos en Av. Suárez 2737, Barracas (CABA), de lunes a viernes de 8 a 16 hs."
+- Si el último mensaje pregunta por envío, costo de envío, flete, correo, transporte o destino/localidad,
+  respondé sobre envío y no incluyas dirección, horario ni link de cómo llegar.
+- Si ese mensaje también menciona un producto o viene desde una página de producto, reconocelo brevemente
+  en la respuesta para dar continuidad (ej. "Por el piso semilla melón no PVC..."), pero no presentes
+  catálogo.
+- Si hay varias medidas o descripciones del producto, priorizá la última que escribió el cliente por sobre
+  títulos/links anteriores de la tienda. No cambies 1.00 x 10 por 1.40 si el cliente corrigió después.
+- Al reconocer el producto en la respuesta de envío, conservá los datos clave escritos por el cliente al final:
+  diseño, material/no PVC y medida si la dio.
+- No confirmes stock ni disponibilidad con "sí, tenemos..." salvo que hayas llamado `buscar_productos` o el
+  cliente pregunte solo por envío sin pedir costo. Para continuidad usá "Por el piso..." o "Sobre el piso...".
+- Si es interior o menciona una localidad/provincia, decí que hacemos envíos al interior por correo y derivá
+  al asesor para confirmar/cotizar costo: https://wa.me/5491125539459
+- No busques productos ni presentes catálogo en esa respuesta salvo que además pregunte disponibilidad/stock o
+  pida ver alternativas.
 """
 
 INTAKE_EXTRACTION_RULES = """\
@@ -109,6 +149,11 @@ Usá `missing` solo para slots que todavía faltan para buscar:
   cuando el cliente pide recomendación o dice que no conoce las medidas, NO pongas `espesor_mm` ni
   `ancho_m` en `missing` (los definís vos por uso); completá `espesor_mm` en `known` y avanzá.
 - Mangueras: "use", "diameter", "length_m"
+  Excepción — disponibilidad con diámetro/tipo/foto: si el cliente pregunta si tenemos una manguera concreta
+  ("tenés/tienen/hay/venden", "estas mangueras", "como la foto") y da diámetro, tipo o referencia, no exijas
+  use ni length_m antes de buscar. Poné `should_search=true` y buscá con lo disponible.
+  Si no hay exacto para los diámetros que ya dio, no vuelvas a pedir `diameter`; ofrecé buscar alternativas y,
+  si hace falta, pedí solo uso y metros.
 - Mascotas: "animal", "size" si no hay `toy_type`
 
 `should_search=true` solo cuando el agente efectivamente va a llamar `buscar_productos` y tiene datos
@@ -121,6 +166,9 @@ suficientes para hacerlo:
   `should_search=true` para recalcular la cobertura sobre esos mismos productos, AUNQUE falten
   `espesor_mm`/`ancho_m`: las medidas ya las define el producto mostrado, no hay que volver a pedirlas.
 - Mangueras: `use` + `diameter` + `length_m`
+  Excepción — disponibilidad con diámetro/tipo/foto: alcanza con `diameter` o una referencia concreta para
+  buscar disponibilidad. Si hay varios diámetros (ej. 80mm y 110mm), buscá cada diámetro o incluí ambos en
+  la búsqueda y respondé por cada uno.
 - Mascotas: `toy_type`, o `animal` + `size`
 - Calzado/hogar/general: con el rubro + cualquier detalle (uso, talle, tipo) ya alcanza para buscar. NO
   exijas un cuestionario completo: una pregunta de disponibilidad ("¿tenés botas?") debe tener
@@ -145,6 +193,8 @@ debe ser `true`. Cuando falte información, `should_search=false`, completá `mi
 2. Espesores: "mm" siempre es `espesor_mm`. Valores típicos: 1.2, 2, 2.5, 3.
 
 3. Anchos: valores en metros típicos: 1, 1.2, 1.4, 1.5, 2.
+   En pisos, formatos como "1.00x10", "1 x 10" o "1,00 x 10" se interpretan como ancho x largo:
+   `ancho_m=1.0` y largo 10 m. Ese ancho reemplaza cualquier ancho anterior del título/link.
 
 4. Vinílico: `category="pisos_vinilicos"` solo si el cliente pide "vinilico", "PVC" o "vinil"
    explícitamente como algo que quiere. El default es goma, sin `category`.
@@ -174,10 +224,12 @@ debe ser `true`. Cuando falte información, `should_search=false`, completá `mi
 8. Mascotas y razas: pitbull, rottweiler, dogo u ovejero implican `animal="perro"` y `size="grande"`.
 
 9. Mensajes operativos o institucionales: saludos, despedidas, agradecimientos, preguntas de precio,
-   envío, pago, factura, horarios, ubicación, retiro, visitar el local, ver productos en persona,
-   pedir un asesor/persona, frustración o mensajes de proveedores deben devolver `intent=null`,
-   `known={}`, `missing=[]`, `should_search=false`, `next_question=null`. Esto manda aunque el mensaje
-   nombre un producto, porque la intención actual es operativa y no buscar catálogo.
+   envío, costo de envío, tiempos de envío, pago, factura, horarios, ubicación, retiro, visitar el local,
+   ver productos en persona, pedir un asesor/persona, frustración o mensajes de proveedores deben devolver
+   `intent=null`, `known={}`, `missing=[]`, `should_search=false`, `next_question=null`. Esto manda aunque
+   el mensaje nombre un producto o traiga link de producto, porque la intención actual es operativa y no
+   buscar catálogo. No uses intents como `consulta_envio`, `precio`, `pago` ni copies especificaciones del
+   producto a `known` en estos casos.
 
 10. Disponibilidad: mensajes con "¿tienen...?", "¿tenés...?", "¿hay...?", "¿vendés...?" que preguntan
     si existe un producto, material o característica deben tener `should_search=true` y una intención
@@ -189,6 +241,11 @@ debe ser `true`. Cuando falte información, `should_search=false`, completá `mi
 
 12. Diseño vs liso: "con diseño", "moneda", "semilla", "rayado" y "antideslizante" implican
     `floor_kind="diseno"`. "liso" implica `floor_kind="liso"`.
+
+13. Mangueras: "inter" o "int." significa "interno" / diámetro interno. Si el cliente dice "estas mangueras"
+    y adjunta o menciona una foto, tratá eso como referencia concreta; buscá antes de pedir uso/largo.
+    En búsquedas de mangueras, conservá siempre la unidad del diámetro en `query_semantica`: escribí "80mm",
+    "110mm", etc., no solo "80" o "110".
 """
 
 FIXED_SAFE_LINKS = {
@@ -220,6 +277,7 @@ def run_pydantic_agent(
     output, deps = run_agent_enforcing_search(agent, request, search, deps)
 
     safe_answer = guard_agent_answer(output.answer, deps.search_responses)
+    safe_answer = ensure_pickup_today_details(safe_answer, request, deps.search_responses)
     if not safe_answer.strip():
         raise AgentError("PydanticAI agent response did not include final text")
 
@@ -231,12 +289,33 @@ def run_pydantic_agent(
 
 
 def build_agent_deps(request: AgentRequest, search: SearchCallable) -> OdranidAgentDeps:
-    return OdranidAgentDeps(
+    deps = OdranidAgentDeps(
         search=search,
         default_limit=request.limit,
         max_limit=request.limit,
         latest_message=request.message,
     )
+    preload_linked_products(deps, request)
+    return deps
+
+
+def preload_linked_products(deps: OdranidAgentDeps, request: AgentRequest) -> None:
+    for slug in extract_product_slugs(request.message):
+        try:
+            response = deps.search(
+                SearchRequest(
+                    query=slug.replace("-", " "),
+                    filters=ProductFilters(product_slug=slug, in_stock_only=False),
+                    limit=1,
+                    relax_filters=False,
+                )
+            )
+        except Exception as exc:
+            logger.warning("linked_product_lookup_failed", extra={"product_slug": slug, "error": str(exc)})
+            continue
+        if response.hits:
+            deps.linked_product_responses.append(response)
+            deps.search_responses.append(response)
 
 
 def run_agent_enforcing_search(
@@ -331,7 +410,12 @@ def _run_agent_once(
 ) -> OdranidAgentOutput:
     try:
         result = agent.run_sync(
-            build_user_prompt(request, force_search=force_search, force_present=force_present),
+            build_user_prompt(
+                request,
+                linked_product_responses=deps.linked_product_responses,
+                force_search=force_search,
+                force_present=force_present,
+            ),
             deps=deps,
         )
     except Exception as exc:
@@ -443,11 +527,20 @@ def build_pydantic_system_prompt(prompt_file: Path, catalog_context: str) -> str
     return "\n\n".join([build_system_prompt(prompt_file, catalog_context), PYDANTIC_AGENT_INSTRUCTIONS, INTAKE_EXTRACTION_RULES])
 
 
-def build_user_prompt(request: AgentRequest, *, force_search: bool = False, force_present: bool = False) -> str:
+def build_user_prompt(
+    request: AgentRequest,
+    *,
+    linked_product_responses: list[SearchResponse] | None = None,
+    force_search: bool = False,
+    force_present: bool = False,
+) -> str:
     payload = {
         "latest_user_message": request.message,
         "history": [message.model_dump() for message in visible_history(request.history)],
     }
+    linked_products = linked_products_payload(linked_product_responses or [])
+    if linked_products:
+        payload["linked_products_from_web"] = linked_products
     lines = [
         "Respondé el último mensaje del cliente usando este contexto de conversación.",
         "```json",
@@ -470,6 +563,30 @@ def build_user_prompt(request: AgentRequest, *, force_search: bool = False, forc
             "\"para mostrarte productos exactos\": el cliente quiere ver las opciones ya y elige sobre ellas."
         )
     return "\n".join(lines)
+
+
+def linked_products_payload(responses: list[SearchResponse]) -> list[dict[str, Any]]:
+    products: list[dict[str, Any]] = []
+    for response in responses:
+        for hit in response.hits:
+            product = hit.product
+            products.append(
+                {
+                    "title": product.title,
+                    "link": canonical_product_link(product.link),
+                    "in_stock": product.in_stock,
+                    "stock_text": product.stock_text,
+                    "rubro": product.rubro,
+                    "category": product.category,
+                    "product_type": product.product_type,
+                    "floor_kind": product.floor_kind,
+                    "floor_design": product.floor_design,
+                    "material": product.material,
+                    "color": product.color,
+                    "specs": product.specs.model_dump(),
+                }
+            )
+    return products
 
 
 def visible_history(history: list[AgentMessage]) -> list[AgentMessage]:
@@ -556,6 +673,98 @@ def guard_agent_answer(answer: str, search_responses: list[SearchResponse]) -> s
     return compact_answer_lines(lines)
 
 
+def ensure_pickup_today_details(answer: str, request: AgentRequest, search_responses: list[SearchResponse]) -> str:
+    if not is_pickup_today_request(request.message) or not search_has_hits(search_responses):
+        return answer
+    exact_hit = first_exact_search_hit(search_responses)
+    if exact_hit is not None:
+        return pickup_today_answer_for_hit(exact_hit, request)
+    safe_answer = remove_pickup_today_promise(answer).strip()
+    missing_parts: list[str] = []
+    if "wa.me/5491125539459" not in safe_answer:
+        missing_parts.append(
+            "Para confirmar disponibilidad y coordinar el retiro hoy, comunicate con un asesor: https://wa.me/5491125539459"
+        )
+    has_address = "Av. Suárez 2737" in safe_answer or "Av. Suarez 2737" in safe_answer
+    has_hours = "8 a 16" in safe_answer
+    if not (has_address and has_hours):
+        missing_parts.append("Estamos en Av. Suárez 2737, Barracas (CABA), de lunes a viernes de 8 a 16 hs.")
+    if not missing_parts:
+        return safe_answer
+    return compact_answer_lines([safe_answer, "", *missing_parts])
+
+
+def first_exact_search_hit(search_responses: list[SearchResponse]) -> SearchHit | None:
+    fallback: SearchHit | None = None
+    for response in search_responses:
+        for hit in response.hits:
+            fallback = fallback or hit
+            if not hit.is_alternative:
+                return hit
+    return fallback
+
+
+def pickup_today_answer_for_hit(hit: SearchHit, request: AgentRequest) -> str:
+    link = canonical_product_link(hit.product.link)
+    intro = pickup_today_intro(request.message)
+    lines = [intro, "", single_product_summary_line(hit)]
+    if link:
+        lines.append(f"🔗 {link}")
+    lines.extend(
+        [
+            "",
+            "Para retirar hoy, confirmá stock y preparación con un asesor antes de venir: https://wa.me/5491125539459",
+            "Estamos en Av. Suárez 2737, Barracas (CABA), de lunes a viernes de 8 a 16 hs.",
+        ]
+    )
+    return compact_answer_lines(lines)
+
+
+def pickup_today_intro(message: str) -> str:
+    greeting = greeting_from_message(message)
+    prefix = f"{greeting} " if greeting else ""
+    return f"{prefix}Sí, tenemos esta opción:"
+
+
+def greeting_from_message(message: str) -> str | None:
+    text = normalize_answer_text(message)
+    if re.match(r"^(buenas tardes|buena tarde)\b", text):
+        return "Buenas tardes."
+    if re.match(r"^(buenos dias|buen dia|buenas)\b", text):
+        return "Buenos días."
+    if re.match(r"^(buenas noches)\b", text):
+        return "Buenas noches."
+    if re.match(r"^(hola|holaa|hello)\b", text):
+        return "Hola."
+    return None
+
+
+def single_product_summary_line(hit: SearchHit) -> str:
+    product = hit.product
+    parts = [product.title]
+    parts.extend(product_descriptors(hit))
+    roll = roll_description(hit)
+    if roll:
+        parts.append(roll)
+    quantity = coverage_quantity(hit)
+    if quantity:
+        parts.append(quantity)
+    return " • ".join(part for part in parts if part)
+
+
+def is_pickup_today_request(message: str) -> bool:
+    text = normalize_answer_text(message)
+    asks_today = "hoy" in text or "en el dia" in text
+    asks_pickup = any(term in text for term in ["retir", "pasar", "paso", "buscar", "retiro"])
+    return asks_today and asks_pickup
+
+
+def remove_pickup_today_promise(answer: str) -> str:
+    text = re.sub(r"(?im)^\s*(sí,\s*)?pod[eé]s retirar hoy\.?\s*$", "", answer)
+    text = re.sub(r"(?i)\bpod[eé]s retirar hoy\b", "podés coordinar el retiro hoy", text)
+    return text
+
+
 def allowed_catalog_items(search_responses: list[SearchResponse]) -> dict[str, Any]:
     links: set[str] = set(FIXED_SAFE_LINKS)
     titles: set[str] = set()
@@ -634,7 +843,12 @@ def product_descriptors(hit: SearchHit) -> list[str]:
         descriptors.append(product.floor_kind)
     if product.floor_design:
         descriptors.append(product.floor_design.replace("_", " ").capitalize())
-    if product.specs.espesor_mm is not None:
+    if product.rubro == "mangueras":
+        if product.specs.diametro_mm is not None:
+            descriptors.append(f"Diámetro {format_number(product.specs.diametro_mm)}mm")
+        elif product.specs.espesor_mm is not None:
+            descriptors.append(f"Diámetro {format_number(product.specs.espesor_mm)}mm")
+    elif product.specs.espesor_mm is not None:
         descriptors.append(f"Espesor {format_number(product.specs.espesor_mm)}mm")
     return descriptors
 

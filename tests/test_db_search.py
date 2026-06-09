@@ -63,6 +63,29 @@ class DbSearchTests(unittest.TestCase):
 
         self.assertEqual([hit.product.id for hit in filtered], [3])
 
+    def test_hose_mm_diameter_does_not_match_decimal_meter_length(self) -> None:
+        exact = SearchHit(product=product(1, "Manguera Aspirapolvo Poliuretano 80mm"), score=0.8)
+        length_only = SearchHit(product=product(2, "Manguera Desagote Lavarropa 1.80m"), score=0.9)
+
+        filtered = post_filter_specific_terms("manguera de 80mm interno", [length_only, exact], 5)
+
+        self.assertEqual([hit.product.id for hit in filtered], [1])
+
+    def test_hose_cm_diameter_matches_equivalent_mm(self) -> None:
+        exact = SearchHit(product=product(1, "Manguera Aspirapolvo Poliuretano 80mm"), score=0.8)
+
+        filtered = post_filter_specific_terms("manguera diametro interno 8 cm", [exact], 5)
+
+        self.assertEqual([hit.product.id for hit in filtered], [1])
+
+    def test_hose_internal_diameter_without_unit_is_treated_as_mm(self) -> None:
+        exact = SearchHit(product=product(1, "Manguera Aspirapolvo Poliuretano 80mm"), score=0.8)
+        other = SearchHit(product=product(2, "Manguera Aspirante 51mm"), score=0.9)
+
+        filtered = post_filter_specific_terms("manguera aspirapolvo 80 interno", [other, exact], 5)
+
+        self.assertEqual([hit.product.id for hit in filtered], [1])
+
     def test_postgres_search_casts_function_arguments(self) -> None:
         constants = "\n".join(str(value) for value in DatabaseCatalogSearch._search_postgres.__code__.co_consts)
 

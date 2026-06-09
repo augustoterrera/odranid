@@ -48,6 +48,9 @@ class ProductDocument(BaseModel):
 
 
 class ProductFilters(BaseModel):
+    # Internal exact lookup used when Chatwoot sends an Odranid product URL.
+    # Search tools do not expose this to the LLM.
+    product_slug: str | None = None
     rubro: str | None = None
     category: str | None = None
     subcategory: str | None = None

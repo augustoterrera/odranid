@@ -8,6 +8,7 @@ import psycopg
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 
+from ..catalog.product_links import canonical_product_urls_for_slug
 from .embeddings import OpenAIEmbeddingClient
 from ..core.models import ProductDocument, ProductFilters, ProductSpecs, SearchHit, SearchRequest, SearchResponse
 from .search_common import post_filter_specific_terms, specific_required_terms
@@ -37,6 +38,15 @@ class DatabaseCatalogSearch:
     postgres_url: str | None = None
 
     def search(self, request: SearchRequest) -> SearchResponse:
+        if request.filters.product_slug:
+            hits = self._search_by_product_slug(request.filters)
+            return SearchResponse(
+                query=request.query,
+                hits=hits[: request.limit],
+                used_relaxation=False,
+                total_catalog_size=self.count_products(),
+            )
+
         query_embedding = self.embedder.embed_many([request.query])[0]
         strict_hits = self._search_once(request, query_embedding, relaxed=[])
         total = self.count_products()
@@ -161,6 +171,41 @@ class DatabaseCatalogSearch:
                 )
                 return [dict(row) for row in cur.fetchall()]
 
+    def _search_by_product_slug(self, filters: ProductFilters) -> list[SearchHit]:
+        if not self.postgres_url:
+            raise DatabaseSearchError("No database search backend configured")
+        slug = str(filters.product_slug or "").strip().lower()
+        link_variants = canonical_product_urls_for_slug(slug)
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    select *
+                    from catalog_products
+                    where (
+                      lower(coalesce(slug, '')) = %(slug)s
+                      or lower(regexp_replace(coalesce(link, ''), '/+$', '')) = any(%(links)s::text[])
+                    )
+                    and (%(in_stock_only)s = false or in_stock = true)
+                    order by in_stock desc, id
+                    limit 1
+                    """,
+                    {
+                        "slug": slug,
+                        "links": link_variants,
+                        "in_stock_only": filters.in_stock_only,
+                    },
+                )
+                rows = [dict(row) for row in cur.fetchall()]
+        return [
+            SearchHit(
+                product=product_from_row(row),
+                score=1.0,
+                matched_filters=["product_slug"],
+            )
+            for row in rows
+        ]
+
     def _connect(self) -> psycopg.Connection:
         try:
             return self._pool().connection()
@@ -209,7 +254,7 @@ def filters_to_rpc_params(filters: ProductFilters) -> dict[str, Any]:
     }
 
 
-_INTERNAL_FILTER_FIELDS = {"in_stock_only", "exclude_vinilico"}
+_INTERNAL_FILTER_FIELDS = {"product_slug", "in_stock_only", "exclude_vinilico"}
 
 
 def matched_filter_names(filters: ProductFilters) -> list[str]:

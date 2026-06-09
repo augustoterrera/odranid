@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from app.core.models import AgentMessage, AgentRequest, AgentResponse, ProductIntakeResponse
+from app.core.models import AgentMessage, AgentRequest, AgentResponse, ProductFilters, ProductIntakeResponse, SearchRequest, SearchResponse
 from app import main
 from app.main import clean_agent_search_query
 from app.main import search_query_from_agent_request
@@ -104,6 +104,33 @@ class MainFlowTests(unittest.TestCase):
                 main.run_agent(AgentRequest(message="Estoy buscando pisos con diseño para cubrir 7m2"))
 
         self.assertEqual(ctx.exception.status_code, 503)
+
+    def test_perform_search_routes_product_slug_to_database_before_typesense(self) -> None:
+        class FakeDbSearch:
+            def search(self, request: SearchRequest) -> SearchResponse:
+                return SearchResponse(query=f"db:{request.filters.product_slug}", total_catalog_size=0, hits=[])
+
+        class RaisingTypesense:
+            def search(self, request: SearchRequest) -> SearchResponse:
+                raise AssertionError("Typesense should not be used for exact product URL lookup")
+
+        previous_db = main.db_search_engine
+        previous_typesense = main.typesense_search_engine
+        previous_local = main.search_engine
+        try:
+            main.db_search_engine = FakeDbSearch()  # type: ignore[assignment]
+            main.typesense_search_engine = RaisingTypesense()  # type: ignore[assignment]
+            main.search_engine = None
+
+            response = main.perform_search(
+                SearchRequest(query="piso web", filters=ProductFilters(product_slug="piso-web"), limit=1)
+            )
+
+            self.assertEqual(response.query, "db:piso-web")
+        finally:
+            main.db_search_engine = previous_db
+            main.typesense_search_engine = previous_typesense
+            main.search_engine = previous_local
 
 
 class AdminAuthTests(unittest.TestCase):

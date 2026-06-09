@@ -6,6 +6,7 @@ from collections import Counter
 
 from ..core.models import ProductDocument, ProductFilters, SearchHit, SearchRequest, SearchResponse
 from ..catalog.normalization import norm_text
+from ..catalog.product_links import product_link_matches_slug
 from .search_common import post_filter_specific_terms
 
 
@@ -35,6 +36,15 @@ class CatalogSearch:
         self.products = products
 
     def search(self, request: SearchRequest) -> SearchResponse:
+        if request.filters.product_slug:
+            hits = self._search_by_product_slug(request.filters)
+            return SearchResponse(
+                query=request.query,
+                hits=hits[: request.limit],
+                used_relaxation=False,
+                total_catalog_size=len(self.products),
+            )
+
         strict_hits = self._search_with_filters(request.query, request.filters, request.limit, relaxed=[])
         if strict_hits or not request.relax_filters:
             return SearchResponse(
@@ -76,6 +86,16 @@ class CatalogSearch:
 
         candidates.sort(key=lambda hit: hit.score, reverse=True)
         return post_filter_specific_terms(query, candidates, limit)
+
+    def _search_by_product_slug(self, filters: ProductFilters) -> list[SearchHit]:
+        slug = str(filters.product_slug or "").strip().lower()
+        hits: list[SearchHit] = []
+        for product in self.products:
+            if filters.in_stock_only and not product.in_stock:
+                continue
+            if str(product.slug or "").strip().lower() == slug or product_link_matches_slug(product.link, slug):
+                hits.append(SearchHit(product=product, score=1.0, matched_filters=["product_slug"]))
+        return hits
 
     def _match_filters(self, product: ProductDocument, filters: ProductFilters, relaxed: list[str]) -> tuple[list[str], list[str]]:
         matched: list[str] = []

@@ -5,7 +5,7 @@ import unittest
 from pydantic_ai.models.test import TestModel
 from pydantic_ai.tools import ToolDefinition
 
-from app.agents.pydantic_agent import run_pydantic_agent
+from app.agents.pydantic_agent import product_summary_line, run_pydantic_agent
 from app.core.models import AgentRequest, CoverageCalculation, ProductDocument, ProductSpecs, SearchHit, SearchRequest, SearchResponse
 
 
@@ -169,6 +169,134 @@ class PydanticAgentTests(unittest.TestCase):
         self.assertIsNotNone(response.intake)
         self.assertFalse(response.intake.should_search)
         self.assertEqual(response.intake.missing, ["espesor_mm", "ancho_m", "requested_m2"])
+
+    def test_product_summary_labels_hose_mm_as_diameter(self) -> None:
+        line = product_summary_line(
+            1,
+            SearchHit(
+                product=ProductDocument(
+                    id=1,
+                    title="Manguera aire roja 8mm",
+                    rubro="mangueras",
+                    specs=ProductSpecs(espesor_mm=8, largo_manguera_m=15),
+                    content="Manguera aire roja",
+                ),
+                score=1.0,
+            ),
+        )
+
+        self.assertIn("Diámetro 8mm", line)
+        self.assertNotIn("Espesor 8mm", line)
+
+    def test_pickup_today_answer_gets_address_and_advisor_without_promise(self) -> None:
+        def fake_search(request: SearchRequest) -> SearchResponse:
+            return SearchResponse(
+                query=request.query,
+                total_catalog_size=1,
+                hits=[
+                    SearchHit(
+                        product=ProductDocument(
+                            id=1,
+                            title="Manguera aire roja 8mm",
+                            link="https://odranid.com/producto/manguera-aire-roja-8mm/",
+                            rubro="mangueras",
+                            specs=ProductSpecs(espesor_mm=8, largo_manguera_m=15),
+                            content="Manguera aire roja",
+                        ),
+                        score=1.0,
+                    )
+                ],
+            )
+
+        response = run_pydantic_agent(
+            request=AgentRequest(
+                message="buenas tardes, necesito 1 rollo de 15 metros de manguera de aire roja de 8mm, puedo retirar hoy?",
+                limit=5,
+            ),
+            search=fake_search,
+            api_key="sk-test",
+            catalog_context="CATALOGO",
+            pydantic_model=ControlledTestModel(
+                tool_args={
+                    "query_semantica": "manguera aire roja 8mm 15m",
+                    "rubro": "mangueras",
+                },
+                output_args={
+                    "intake": {"intent": "mangueras", "known": {"rubro": "mangueras"}, "should_search": True},
+                    "answer": "\n".join(
+                        [
+                            "Manguera aire roja 8mm",
+                            "🔗 https://odranid.com/producto/manguera-aire-roja-8mm/",
+                            "Podés retirar hoy.",
+                        ]
+                    ),
+                },
+            ),
+        )
+
+        self.assertTrue(response.answer.startswith("Buenas tardes. Sí, tenemos esta opción:"))
+        self.assertIn("Manguera aire roja 8mm", response.answer)
+        self.assertIn("https://wa.me/5491125539459", response.answer)
+        self.assertIn("Av. Suárez 2737", response.answer)
+        self.assertIn("8 a 16 hs", response.answer)
+        self.assertNotIn("Podés retirar hoy.", response.answer)
+        self.assertNotIn("1. Manguera", response.answer)
+
+    def test_agent_preloads_product_from_web_link(self) -> None:
+        seen_requests: list[SearchRequest] = []
+
+        def fake_search(request: SearchRequest) -> SearchResponse:
+            seen_requests.append(request)
+            return SearchResponse(
+                query=request.query,
+                total_catalog_size=1,
+                hits=[
+                    SearchHit(
+                        product=ProductDocument(
+                            id=10,
+                            title="Piso Web Semilla Melon 3mm",
+                            slug="piso-web-semilla-melon-3mm",
+                            link="https://odranid.com/producto/piso-web-semilla-melon-3mm/",
+                            rubro="pisos",
+                            floor_kind="diseno",
+                            floor_design="semilla_melon",
+                            material="goma",
+                            specs=ProductSpecs(espesor_mm=3, ancho_m=1.4, largo_m=10),
+                            content="Piso web semilla melon",
+                        ),
+                        score=1.0,
+                    )
+                ],
+            )
+
+        model = InspectPromptModel(
+            output_args={
+                "intake": {"intent": None, "known": {}, "should_search": False},
+                "answer": "Piso Web Semilla Melon 3mm\n🔗 https://odranid.com/producto/piso-web-semilla-melon-3mm/",
+            }
+        )
+
+        response = run_pydantic_agent(
+            request=AgentRequest(
+                message=(
+                    "Hola Odranid! Vengo de la tienda online Piso Web "
+                    "https://odranid.com.ar/producto/piso-web-semilla-melon-3mm/ "
+                    "y quisiera saber si hacen envío"
+                ),
+                limit=5,
+            ),
+            search=fake_search,
+            api_key="sk-test",
+            catalog_context="CATALOGO",
+            pydantic_model=model,
+        )
+
+        self.assertEqual(len(seen_requests), 1)
+        self.assertEqual(seen_requests[0].filters.product_slug, "piso-web-semilla-melon-3mm")
+        self.assertIn("linked_products_from_web", model.messages_text)
+        self.assertIn("Piso Web Semilla Melon 3mm", response.answer)
+        self.assertIn("🔗 https://odranid.com.ar/producto/piso-web-semilla-melon-3mm/", response.answer)
+        self.assertEqual(response.tool_calls, [])
 
     def test_agent_removes_hallucinated_product_and_link_from_tool_backed_answer(self) -> None:
         def fake_search(request: SearchRequest) -> SearchResponse:
@@ -426,6 +554,16 @@ class ControlledTestModel(TestModel):
         if tool_def.name == "buscar_productos":
             return self.tool_args
         return super().gen_tool_args(tool_def)
+
+
+class InspectPromptModel(TestModel):
+    def __init__(self, *, output_args: dict[str, object]) -> None:
+        super().__init__(call_tools=[], custom_output_args=output_args)
+        self.messages_text = ""
+
+    async def request(self, messages, model_settings, model_request_parameters):  # type: ignore[override]
+        self.messages_text = str(messages)
+        return await super().request(messages, model_settings, model_request_parameters)
 
 
 class ForceSearchRetryModel(TestModel):

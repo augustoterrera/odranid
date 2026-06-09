@@ -375,6 +375,15 @@ def _load_catalog_context() -> str:
 
 
 def perform_search(request: SearchRequest) -> SearchResponse:
+    # Product links from the web should resolve against Postgres, the source of
+    # truth, even when Typesense is enabled. Typesense keeps `link` unindexed, so
+    # exact URL lookups must bypass hybrid search.
+    if request.filters.product_slug:
+        if db_search_engine is not None:
+            return enrich_search_response(db_search_engine.search(request))
+        if search_engine is not None:
+            return enrich_search_response(search_engine.search(request))
+
     if typesense_search_engine is not None:
         return enrich_search_response(typesense_search_engine.search(request))
 
