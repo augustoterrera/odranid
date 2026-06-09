@@ -618,8 +618,14 @@ class ChatMemoryStore:
                 return int(first_row(cur.fetchone()).get("cleaned") or 0)
 
     def _connect(self) -> psycopg.Connection:
+        # Conexión NUEVA por operación, en autocommit. No usamos el ConnectionPool
+        # compartido: en el proceso uvicorn dejaba las escrituras sin persistir (se
+        # revertían pese al commit-on-return). Una conexión fresca autocommit es lo que
+        # funcionó de forma confiable (cada statement se confirma al instante y se cierra
+        # al salir del `with`). Los métodos que necesitan atomicidad multi-statement usan
+        # `with conn.transaction()` explícito, que sigue funcionando en autocommit.
         try:
-            return self._pool().connection()
+            return psycopg.connect(self.database_url, autocommit=True, row_factory=dict_row)
         except psycopg.Error as exc:
             raise ChatMemoryError(f"Could not connect to Postgres chat memory: {exc}") from exc
 
