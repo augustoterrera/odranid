@@ -7,6 +7,7 @@ import re
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi.concurrency import run_in_threadpool
 
 from .agents.catalog_helpers import AgentError
 from .catalog.catalog_context import CatalogContextCache, TTLStringCache
@@ -187,7 +188,12 @@ async def chatwoot_webhook(request: Request) -> ChatwootWebhookResponse:
         event.message_id,
     )
     try:
-        is_new, conversation, job_id = persist_incoming_chatwoot_event(chat_memory_store, event_key, event, payload)
+        # El store usa el ConnectionPool SINCRÓNICO de psycopg, que no se comporta bien
+        # invocado directo dentro del event loop async (las escrituras no persistían).
+        # Lo corremos en un threadpool: contexto sync real donde el pool commitea OK.
+        is_new, conversation, job_id = await run_in_threadpool(
+            persist_incoming_chatwoot_event, chat_memory_store, event_key, event, payload
+        )
     except ChatMemoryError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
