@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import re
 from dataclasses import dataclass
@@ -17,6 +18,7 @@ from .slot_questions import derived_roll_surface_m2, floor_next_question, hose_n
 
 
 _POOLS: dict[tuple[int, str], ConnectionPool] = {}
+logger = logging.getLogger(__name__)
 
 
 class ChatMemoryError(RuntimeError):
@@ -382,6 +384,14 @@ class ChatMemoryStore:
                     (conversation_id, limit),
                 )
                 rows = cur.fetchall()
+
+        # El known se re-deriva del diálogo crudo cada turno: si la ventana se llenó,
+        # los mensajes más viejos quedan afuera y el agente pierde esos datos.
+        if len(rows) >= limit:
+            logger.warning(
+                "chat_history_window_full",
+                extra={"conversation_id": conversation_id, "history_limit": limit},
+            )
 
         messages: list[AgentMessage] = []
         for row in reversed(rows):

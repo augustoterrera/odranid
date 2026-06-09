@@ -661,14 +661,27 @@ def guard_agent_answer(answer: str, search_responses: list[SearchResponse]) -> s
 
     allowed = allowed_catalog_items(search_responses)
     lines: list[str] = []
+    discarded_links = 0
+    discarded_products = 0
     for raw_line in answer.splitlines():
         line, had_disallowed_link = format_allowed_links_for_whatsapp(raw_line, allowed["links"])
         if had_disallowed_link:
+            discarded_links += 1
             continue
         if looks_like_product_line(line) and not mentions_allowed_product(line, allowed["titles"]):
+            discarded_products += 1
             continue
         lines.append(line.rstrip())
 
+    if discarded_links or discarded_products:
+        logger.warning(
+            "guard_discarded_answer_lines",
+            extra={
+                "discarded_link_lines": discarded_links,
+                "discarded_product_lines": discarded_products,
+                "total_lines": len(answer.splitlines()),
+            },
+        )
     lines = repair_orphan_product_links(lines, allowed["link_hits"], allowed["titles"])
     return compact_answer_lines(lines)
 
