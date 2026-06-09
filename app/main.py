@@ -211,7 +211,19 @@ async def chatwoot_webhook(request: Request) -> ChatwootWebhookResponse:
     from .tasks.chatwoot_tasks import process_chatwoot_conversation, set_conversation_debounce
 
     set_conversation_debounce(conversation.id)
-    reason = "queued_for_celery_processing"
+    # DEBUG temporal: a qué DB escribe el store global y si el evento quedó visible al instante.
+    import psycopg as _pg
+    try:
+        with _pg.connect(chat_memory_store.database_url, autocommit=True) as _c:
+            with _c.cursor() as _cur:
+                _cur.execute("select count(*) from public.chat_processed_events where event_key=%s", (event_key,))
+                _vis = _cur.fetchone()[0]
+                _cur.execute("select coalesce(inet_server_addr()::text,'local'), current_database()")
+                _srv = _cur.fetchone()
+        _dbg = f" DBG url={chat_memory_store.database_url} srv={_srv} visible={_vis}"
+    except Exception as _e:
+        _dbg = f" DBG error {type(_e).__name__}:{_e}"
+    reason = "queued_for_celery_processing" + _dbg
     try:
         process_chatwoot_conversation.apply_async(
             (str(conversation.id),),
