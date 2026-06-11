@@ -15,6 +15,10 @@ def floor_next_question(known: dict[str, Any], missing: list[str]) -> str:
 
     if missing == ["floor_kind_or_design", "espesor_mm", "ancho_m", "requested_m2"] and not known.get("use"):
         return "¿Para qué lo vas a usar? Por ejemplo: gimnasio, oficina, rampa, ascensor, salón o depósito."
+    if missing == ["use"]:
+        return "¿Para qué lo vas a usar? Por ejemplo: gimnasio, oficina, rampa, ascensor, salón o depósito."
+    if missing == ["use", "requested_m2"]:
+        return "¿Para qué lo vas a usar y cuántos m² necesitás cubrir?"
     if missing == ["espesor_mm", "ancho_m"]:
         return "¿Qué espesor y ancho buscás? Por ejemplo: 3 mm y 1,20 m."
     if missing == ["floor_kind_or_design"]:

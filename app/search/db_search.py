@@ -134,6 +134,9 @@ class DatabaseCatalogSearch:
                 score=float(row.get("similarity") or 0),
                 matched_filters=matched_filter_names(filters),
                 relaxed_filters=relaxed,
+                # Con filtros relajados el producto NO cumple todo lo pedido: marcarlo
+                # para que el agente lo presente como alternativa, no como match exacto.
+                is_alternative=bool(relaxed),
             )
             for row in rows
         ]

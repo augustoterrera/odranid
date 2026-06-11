@@ -432,6 +432,14 @@ def retargeting_stats() -> dict[str, object]:
     return {"ok": True, **stats, "reactivation_rate": rate}
 
 
+def ensure_search_configured() -> None:
+    """Configura la búsqueda solo si el proceso aún no la tiene (workers Celery la
+    reusan entre tasks; DatabaseCatalogSearch consulta Postgres en vivo, así que
+    reutilizar el engine no sirve datos viejos)."""
+    if typesense_search_engine is None and db_search_engine is None and search_engine is None:
+        configure_search()
+
+
 def configure_search(force_local_reload: bool = False) -> None:
     global db_search_engine, typesense_search_engine
     typesense_search_engine = build_typesense_engine()

@@ -1,0 +1,7 @@
+# Calzado no tiene cuestionario: buscar y mostrar surtido; como mucho UNA pregunta (talle).
+message: "hola, venden botas de goma?"
+asserts:
+  - tool_called: buscar_productos
+  - should_search: true
+  - presents_product
+  - max_questions: 1

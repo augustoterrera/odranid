@@ -1,0 +1,7 @@
+# Producto concreto + retiro hoy: buscar, mostrar, pero NUNCA prometer "podés retirar hoy".
+# Cerrar con asesor + dirección/horario.
+message: "Buenas tardes, tienen piso moneda de 3mm? paso hoy a retirarlo"
+asserts:
+  - tool_called: buscar_productos
+  - mentions: ["wa.me/5491125539459", "suarez 2737"]
+  - not_mentions: ["podes retirar hoy"]

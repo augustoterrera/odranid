@@ -1,0 +1,13 @@
+# Mensaje real. Pregunta de precio = operativo: sin búsqueda y JAMÁS mostrar precio
+# (no_prices corre global). Debe derivar a la web (link ya mostrado) o al asesor.
+#
+# Regla 9 (resuelta en Fase 4): intent operativo + contexto de producto en known está
+# permitido; lo innegociable es should_search=false y cero herramientas.
+history:
+  - {role: user, content: "tienen piso de goma moneda de 3mm?"}
+  - {role: assistant, content: "Sí, tenemos pisos moneda 🙌\n\n1. Piso De Goma/pvc Moneda 3mm Gris 1,20x15mts Oficina Gimnasio • Con diseño • Moneda • Espesor 3mm • Rollo 15m x 1.2m (18 m²)\n🔗 https://odranid.com.ar/producto/piso-de-goma-pvc-moneda-3mm-gris-120x15mts-oficina-gimnasio/\n\n¿Cuántos m² querés cubrir?"}
+message: "que precio tiene el rollo de 3mm ?¿"
+asserts:
+  - no_tool_calls
+  - should_search: false
+  - mentions_any: ["asesor", "wa.me", "web"]

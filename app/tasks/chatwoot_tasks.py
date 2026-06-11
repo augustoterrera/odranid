@@ -168,9 +168,9 @@ def process_chatwoot_conversation(self, conversation_id: str) -> dict[str, objec
 
         try:
             store.update_jobs_for_conversation(int(conversation_id), "processing", worker_id=worker_id(task_id))
-            from app.main import configure_search, run_agent
+            from app.main import ensure_search_configured, run_agent
 
-            configure_search()
+            ensure_search_configured()
 
             outbox_id = process_pending_conversation_messages(store, int(conversation_id), run_agent)
             if outbox_id is not None:

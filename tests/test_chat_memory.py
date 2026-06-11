@@ -296,6 +296,76 @@ class ChatMemoryTests(unittest.TestCase):
             )
         )
 
+    def test_recommendation_mode_does_not_require_ancho(self) -> None:
+        state = build_memory_state(
+            {},
+            ProductIntakeResponse(
+                intent="pisos",
+                known={"rubro": "pisos", "recommendation": True, "use": "gimnasio", "requested_m2": 18},
+                missing=[],
+                should_search=True,
+            ),
+            None,
+        )
+
+        self.assertEqual(state["missing"], [])
+        self.assertTrue(state["should_search"])
+        self.assertIsNone(state["pending_slot"])
+        # El espesor se deriva del uso (gimnasio -> 3mm), espejo de la guía del prompt.
+        self.assertEqual(state["known"]["espesor_mm"], 3.0)
+
+    def test_recommendation_mode_derives_espesor_for_office(self) -> None:
+        state = build_memory_state(
+            {},
+            ProductIntakeResponse(
+                intent="pisos",
+                known={"rubro": "pisos", "recommendation": True, "use": "oficina", "requested_m2": 30},
+                should_search=True,
+            ),
+            None,
+        )
+
+        self.assertEqual(state["known"]["espesor_mm"], 2.0)
+        self.assertTrue(state["should_search"])
+
+    def test_recommendation_mode_does_not_impose_espesor_on_chosen_design(self) -> None:
+        state = build_memory_state(
+            {},
+            ProductIntakeResponse(
+                intent="pisos",
+                known={
+                    "rubro": "pisos",
+                    "recommendation": True,
+                    "use": "hogar",
+                    "floor_design": "simil_madera",
+                    "requested_m2": 10,
+                },
+                should_search=True,
+            ),
+            None,
+        )
+
+        # Diseño concreto elegido: mandan los espesores reales del diseño, no el default.
+        self.assertNotIn("espesor_mm", state["known"])
+        self.assertTrue(state["should_search"])
+
+    def test_recommendation_mode_asks_use_when_unknown(self) -> None:
+        state = build_memory_state(
+            {},
+            ProductIntakeResponse(
+                intent="pisos",
+                known={"rubro": "pisos", "recommendation": True},
+                should_search=False,
+            ),
+            None,
+        )
+
+        self.assertEqual(state["missing"], ["use", "requested_m2"])
+        self.assertFalse(state["should_search"])
+        self.assertIn("usar", state["last_question"])
+        # Nunca debe quedar pendiente el ancho en modo recomendación.
+        self.assertNotEqual(state["pending_slot"], "ancho_m")
+
     def test_memory_store_uses_direct_postgres_database_url(self) -> None:
         store = build_chat_memory_store_from_settings(
             SimpleNamespace(database_url="postgresql://user:pass@localhost:5432/db")

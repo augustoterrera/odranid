@@ -6,6 +6,29 @@ from ..core.models import ProductDocument, SearchHit
 from ..catalog.normalization import norm_num, norm_text
 
 
+_FLOOR_DESIGN_TERMS = ["diseno", "moneda", "semilla", "rayado", "simil madera", "simil_madera", "antideslizante"]
+_FLOOR_KIND_AMBIGUOUS = re.compile(r"no\s+importa|da\s+igual|cualquier|indistinto|o\s+con\s+diseno|liso\s+o\b")
+
+
+def infer_floor_kind(text: str) -> str | None:
+    """Garantía determinística del tipo de piso pedido (espejo de la regla 12 de intake).
+
+    Si el cliente dijo "liso" (y no mencionó diseños), el filtro floor_kind=liso se aplica
+    aunque el LLM no lo haya emitido: pedir liso y recibir moneda es el bug de producción
+    que esto previene. Ante ambigüedad ("liso o con diseño", "no importa") no se infiere.
+    """
+    normalized = norm_text(text)
+    if _FLOOR_KIND_AMBIGUOUS.search(normalized):
+        return None
+    has_liso = bool(re.search(r"\blisos?\b", normalized))
+    has_design = any(term in normalized for term in _FLOOR_DESIGN_TERMS)
+    if has_liso and not has_design:
+        return "liso"
+    if has_design and not has_liso:
+        return "diseno"
+    return None
+
+
 def post_filter_specific_terms(query: str, hits: list[SearchHit], limit: int) -> list[SearchHit]:
     terms = specific_required_terms(query)
     if not terms:

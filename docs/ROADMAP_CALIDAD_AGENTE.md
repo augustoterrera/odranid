@@ -30,15 +30,22 @@ antes del fix y pase después.**
 
 ## Fase 0 — Higiene y visibilidad (1 día)
 
-- [ ] Remover el bloque `DEBUG temporal` del webhook en `app/main.py` (filtra la URL de la DB
+- [x] Remover el bloque `DEBUG temporal` del webhook en `app/main.py` (filtra la URL de la DB
       con password en la respuesta HTTP y abre 2 conexiones extra por mensaje).
-- [ ] Métricas de salud del agente en logs (contadores por turno):
+- [x] Métricas de salud del agente en logs (contadores por turno):
   - líneas descartadas por `guard_agent_answer` (hoy el descarte es invisible),
   - re-runs por `agent_should_search_without_tool_call` y `agent_recommendation_hid_products`,
   - conversaciones que superan `chatwoot_history_limit` (riesgo de "olvido" por re-derivación).
 - Salida: saber dónde duele de verdad antes de tocar nada.
 
-## Fase 1 — Harness de evaluación (la base de todo)
+## Fase 1 — Harness de evaluación (la base de todo) ✅
+
+> Implementado: `evals/` con 13 casos seed (mensajes reales del JSON de n8n), runner pytest,
+> aserciones declarativas, snapshot de 257 productos y `make eval` (~70s, 13/13 verde estable).
+> Hallazgos ya documentados en los casos: (a) la regla 9 de intake se viola cuando hay specs
+> en el historial — intent='consulta_envio'/'consulta_precio' con known lleno, respuesta
+> visible correcta (→ Fase 5); (b) "AFA" aparece en títulos reales de mangueras, en conflicto
+> con la prohibición del prompt — `brand_rules` excluye términos citados de títulos (→ Fase 4).
 
 Estructura:
 
@@ -85,7 +92,14 @@ Decisiones:
   precio/asesor), calzado, mascotas, multi-mensaje (ráfaga unida).
 - Comando único: `make eval` (o `uv run pytest -m eval`).
 
-## Fase 2 — CI en GitHub Actions
+## Fase 2 — CI en GitHub Actions ✅
+
+> Implementado: `.github/workflows/tests.yml` (unitarios en cada push/PR) y
+> `.github/workflows/evals.yml` (evals solo cuando el cambio toca `app/agents|chat|search|
+> catalog`, `evals/` o por dispatch manual; resumen en el job summary). El runner reintenta
+> cada caso hasta 2 veces: una regresión sistemática falla siempre, el ruido del LLM no.
+> **Pendiente manual**: cargar el secret `OPENAI_API_KEY` en GitHub
+> (Settings → Secrets and variables → Actions).
 
 - Workflow 1 (cada push/PR): tests unitarios existentes. Sin tokens.
 - Workflow 2 (evals): corre cuando cambian rutas sensibles (`app/agents/**`, `app/chat/
@@ -94,7 +108,12 @@ Decisiones:
 - Branch protection opcional: evals verdes requeridos para mergear a main cuando el PR toca
   el prompt o el agente.
 
-## Fase 3 — Exportador de incidentes y flujo de arreglo
+## Fase 3 — Exportador de incidentes y flujo de arreglo ✅
+
+> Implementado: `scripts/export_conversation.py --conversation <id_chatwoot>` genera
+> `evals/cases/incident_<id>.yaml` (la ráfaga final de mensajes user queda como `message`,
+> la respuesta mala del bot se descarta del history). El flujo de 6 pasos de abajo queda
+> como el proceso operativo.
 
 Tooling: `scripts/export_conversation.py --conversation <id_chatwoot>` → lee `chat_messages`
 (por tailnet al Postgres del VPS) y genera `evals/cases/incident_<id>.yaml` con el historial
@@ -115,7 +134,15 @@ real y un bloque `asserts: []` para completar.
 6. **Commit atómico**: caso + fix juntos. El historial de `evals/cases/` queda como registro
    de todos los comportamientos garantizados.
 
-## Fase 4 — Refactor del prompt (recién acá, con red de seguridad)
+## Fase 4 — Refactor del prompt (recién acá, con red de seguridad) ✅ (parcial)
+
+> Hecho: (a) system prompt reordenado — estático primero, CONTEXTO DINAMICO al final —
+> para aprovechar el prompt caching de OpenAI; (b) conflicto AFA resuelto: prohibido por
+> iniciativa propia, permitido citar el título textual de un producto devuelto; (c) regla 9
+> reescrita: en operativos lo innegociable es should_search=false y cero herramientas;
+> el intent operativo y el contexto de producto en known están permitidos (continuidad).
+> **Pendiente** (cuando el set crezca a 30+ casos): deduplicar "la última medida del
+> cliente gana" (4 lugares) y purgar ejemplos literales restantes.
 
 - Deduplicar reglas repetidas (la prioridad "última medida del cliente gana" está en 4 lugares).
 - Resolver conflictos explícitos (regla 9 de intake vs `linked_products_from_web`).
@@ -127,7 +154,13 @@ real y un bloque `asserts: []` para completar.
   concatenadas en `build_pydantic_system_prompt`, para que un cambio de mangueras no toque
   el archivo de pisos.
 
-## Fase 5 — Unificar la máquina de estados
+## Fase 5 — Unificar la máquina de estados ✅
+
+> Hecho: `build_memory_state` documentado como autoridad única; `recompute_missing_slots`
+> tiene rama de modo recomendación (sin `ancho_m`; espesor derivado del uso vía
+> `RECOMMENDED_ESPESOR_BY_USE`, salvo diseño concreto elegido); `floor_next_question`
+> pregunta el uso cuando es lo único que falta; el invariante "si buscó, should_search=true"
+> se fuerza en código en `run_pydantic_agent` (el LLM a veces buscaba devolviendo false).
 
 - Alinear `recompute_missing_slots` con las excepciones del prompt (modo recomendación,
   availability lookup): hoy exige `ancho_m` aunque el prompt diga que no se pide, y puede
@@ -138,18 +171,23 @@ real y un bloque `asserts: []` para completar.
 - Casos de eval multi-turno que cubran `pending_slot` (responder un número suelto después
   de una recomendación, etc.).
 
-## Fase 6 — Mejoras guiadas por métricas (orden según lo que diga Fase 0)
+## Fase 6 — Mejoras guiadas por métricas ✅ (núcleo)
 
-- Guard de respuesta: renumerar la lista tras descartar líneas; si descartó más de N líneas,
-  re-ejecutar el turno en vez de mandar una respuesta mutilada.
-- `preload_linked_products`: extraer slugs también de los últimos mensajes user del historial
-  (hoy solo del mensaje actual).
-- Cachear el engine de búsqueda en el worker (hoy `configure_search()` reconstruye todo por
-  mensaje).
-- Mensajes en ráfaga: tras generar la respuesta, verificar si llegaron pendientes nuevos y
-  reprocesar todo junto en vez de mandar una respuesta ya obsoleta.
-- Evaluar modelo: con el set como juez, probar alternativas de modelo/costo y decidir con
-  datos.
+- [x] Guard: renumera la lista tras descartar líneas (sin huecos 1., 3., 5.).
+- [x] `preload_linked_products`: extrae slugs también de los últimos 6 mensajes user del
+      historial (máx. 3 lookups por turno); un follow-up sin link recupera el producto real.
+- [x] Engine de búsqueda cacheado por proceso del worker (`ensure_search_configured`).
+- [x] Ráfaga: si llegan mensajes nuevos durante la generación, el turno se descarta y la
+      task del mensaje nuevo procesa todo junto (`chatwoot_turn_superseded_by_new_messages`).
+- [ ] Re-ejecutar el turno cuando el guard descarta más de N líneas — esperar a que la
+      métrica `guard_discarded_answer_lines` muestre si pasa en producción.
+- [ ] Guard de cantidades: en conv 811 el bot escribió "Necesitás 4 rollos" para un rollo
+      de 6 m² cubriendo 60 m² (real: 10) — el LLM copia/alucina cantidades en vez de usar
+      `coverage.rolls_needed`. Verificación determinística posible: en líneas que citan un
+      producto + "Necesitás X rollos", comparar X contra el coverage del hit y corregir/
+      loggear. Mitigado parcialmente por el sort (los rollos chicos ya no se presentan
+      para superficies grandes).
+- [ ] Evaluar modelo alternativo con el set como juez (`ODRANID_EVAL_MODEL`).
 
 ---
 

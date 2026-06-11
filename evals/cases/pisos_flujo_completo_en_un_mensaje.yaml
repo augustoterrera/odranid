@@ -1,0 +1,7 @@
+# El cliente da todo en una frase: buscar en ese mismo turno y presentar, sin re-preguntar.
+message: "busco piso de goma liso de 2mm, ancho 1.40, para cubrir 20 m2"
+asserts:
+  - tool_called: buscar_productos
+  - should_search: true
+  - presents_product
+  - not_asks: ["espesor", "ancho", "m2"]

@@ -698,6 +698,10 @@ def outbox_from_row(row: dict[str, Any]) -> ChatOutboxMessage:
 
 
 def build_memory_state(previous_state: dict[str, Any], intake: ProductIntakeResponse, pending_slot: str | None) -> dict[str, Any]:
+    """Autoridad única del estado post-turno (ver docs/ROADMAP_CALIDAD_AGENTE.md, Fase 5):
+    el intake del LLM aporta `intent` y `known`; `missing`, `should_search`, `pending_slot`
+    y `last_question` los decide ESTE recompute determinístico. Las excepciones del prompt
+    (modo recomendación, availability lookup) deben reflejarse acá, no solo en el prompt."""
     if should_keep_pending_question(previous_state, intake):
         return {
             **previous_state,
@@ -786,6 +790,8 @@ def recompute_missing_slots(intent: str | None, known: dict[str, Any], fallback_
         return [slot for slot in ["use", "diameter", "length_m"] if known.get(slot) is None]
     if intent != "pisos":
         return fallback_missing
+    if known.get("recommendation"):
+        return recommendation_missing_slots(known)
     is_availability_width_lookup = known.get("lookup_mode") == "availability_width"
     missing = []
     if not (known.get("floor_kind") or known.get("floor_design") or known.get("style_preference")):
@@ -795,6 +801,18 @@ def recompute_missing_slots(intent: str | None, known: dict[str, Any], fallback_
     if not is_availability_width_lookup and known.get("ancho_m") is None:
         missing.append("ancho_m")
     if known.get("coverage_required") is not False and not is_availability_width_lookup and known.get("requested_m2") is None:
+        missing.append("requested_m2_confirmation" if known.get("ambiguous_requested_m2") is not None else "requested_m2")
+    return missing
+
+
+def recommendation_missing_slots(known: dict[str, Any]) -> list[str]:
+    """Modo recomendación: el cliente delegó la decisión, así que el ancho es un atributo
+    del producto (no se pregunta) y el espesor se deriva del uso. Solo puede faltar el uso
+    (para derivar espesor) y los m² a cubrir. Espejo de la excepción del prompt."""
+    missing = []
+    if known.get("espesor_mm") is None and known.get("use") is None:
+        missing.append("use")
+    if known.get("coverage_required") is not False and known.get("requested_m2") is None:
         missing.append("requested_m2_confirmation" if known.get("ambiguous_requested_m2") is not None else "requested_m2")
     return missing
 
@@ -910,8 +928,31 @@ def authoritative_known_from_intake(intake: ProductIntakeResponse) -> dict[str, 
     return known
 
 
+RECOMMENDED_ESPESOR_BY_USE = {
+    # Uso intenso -> 3mm; tránsito medio/hogar -> 2mm. Espejo de la GUÍA DE MATERIALES
+    # del prompt, garantizado acá de forma determinística.
+    "gimnasio": 3.0,
+    "danza": 3.0,
+    "industrial": 3.0,
+    "cochera": 3.0,
+    "hogar": 2.0,
+    "dormitorio": 2.0,
+    "oficina": 2.0,
+    "comercial": 2.0,
+    "baño": 2.0,
+}
+
+
 def complete_derived_slots(known: dict[str, Any]) -> None:
-    if known.get("rubro") != "pisos" or known.get("requested_m2") is not None:
+    if known.get("rubro") != "pisos":
+        return
+    # Recomendación delegada: derivar espesor del uso, salvo que el cliente ya haya
+    # fijado un diseño/producto concreto (ahí mandan los espesores reales del diseño).
+    if known.get("recommendation") and known.get("espesor_mm") is None and not known.get("floor_design"):
+        derived_espesor = RECOMMENDED_ESPESOR_BY_USE.get(str(known.get("use") or "").lower())
+        if derived_espesor is not None:
+            known["espesor_mm"] = derived_espesor
+    if known.get("requested_m2") is not None:
         return
     derived = derived_roll_surface_m2(
         safe_int(known.get("roll_count")),

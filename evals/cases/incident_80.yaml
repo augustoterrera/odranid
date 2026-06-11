@@ -1,0 +1,32 @@
+# Incidente real (conversación 80, dev). El cliente escribió "pisos ss" (sigla ambigua)
+# y el bot ASUMIÓ "pisos semilla / con diseño" sin que el cliente lo pidiera, afirmándolo
+# como un hecho ("Para la cámara de frío buscas pisos semilla...").
+# Comportamiento esperado: ante un término que no entiende, NO inventar atributos:
+# abrir el cuestionario normal de pisos (tipo, espesor, ancho, m²) sin dar por elegido
+# ningún diseño.
+history:
+- role: user
+  content: Hola Odranid! Vengo de la tienda online Odranid https://odranid.com.ar/ y quisiera saber
+- role: assistant
+  content: '👋 ¡Hola! Soy el asistente virtual de Odranid.
+
+
+    Decime qué necesitás:
+
+    1) Pisos de goma
+
+    2) Mangueras
+
+    3) Juguetes para perro
+
+    4) Otro producto
+
+
+    Podés responder con el número o contarme directamente qué buscás.'
+message: busco pisos ss para la cámara de frío del trabajo
+asserts:
+  - no_tool_calls
+  - intake_not_known: ["floor_design", "floor_kind"]
+  # Debe preguntar el tipo (liso/diseño) en vez de darlo por elegido. Cómo encadena el
+  # resto del cuestionario (espesor/ancho/m² juntos o después) es flexible.
+  - asks: ["liso"]

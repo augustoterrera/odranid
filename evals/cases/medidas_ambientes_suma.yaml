@@ -1,0 +1,12 @@
+# Incidente de producción/dev (conv 811/80): el cliente pasa las medidas de VARIOS
+# ambientes ("5 x 2 (10 m2) / 1 x 2 (2 m2) / ...") y el bot toma el primer número como
+# superficie total (10 m²) o un lado como ancho (2.4m). Las listas de medidas A x B son
+# ambientes: se SUMAN como superficie a cubrir (acá: 10+2+8+8 = 28 m²).
+history:
+  - {role: user, content: "busco piso liso de goma de 2mm, de 1.40 de ancho, para proteger una casa que muestro"}
+  - {role: assistant, content: "¡Perfecto! Piso liso de goma 2mm, ancho 1.40m. ¿Cuántos m² necesitás cubrir?"}
+message: "te paso los ambientes\n5 x 2 ( 10 m2 )\n1 x 2 ( 2 m2 )\n4 x 2 ( 8 m2 )\n2 de 2 x 2 ( 4 m2 )"
+asserts:
+  - tool_called: buscar_productos
+  - presents_product
+  - requested_m2_between: [24, 30]

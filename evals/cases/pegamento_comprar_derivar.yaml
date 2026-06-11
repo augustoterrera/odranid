@@ -1,0 +1,6 @@
+# Regla de negocio: el pegamento/adhesivo no se vende suelto por la web (solo combos);
+# quien pregunta por pegamento se deriva DIRECTO al asesor para comprarlo con él.
+message: "hola, venden pegamento para pisos de goma?"
+asserts:
+  - no_tool_calls
+  - mentions: ["wa.me/5491125539459"]

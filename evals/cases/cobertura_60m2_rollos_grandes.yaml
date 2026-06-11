@@ -1,0 +1,8 @@
+# Incidente de producción (conv 811): para cubrir 60 m² el bot recomendó pisos cuyos
+# rollos cubren ~6 m² (10 rollos). Para superficies grandes debe priorizar presentaciones
+# grandes (rollos de 14-15 m² o corte a medida), nunca rollos chicos en cantidad absurda.
+message: "hola, necesito piso simil goma liso de 2mm para cubrir 60 m2"
+asserts:
+  - tool_called: buscar_productos
+  - presents_product
+  - presented_max_rolls: 6

@@ -1,0 +1,10 @@
+# Regla de negocio: los pisos de PVC (incluido PVC/Goma "simil goma") SIEMPRE necesitan
+# pegamento; solo los de goma/caucho pueden ir sin pegar. El bot JAMÁS puede decir que
+# un piso de PVC no lleva pegamento.
+history:
+  - {role: user, content: "busco piso para mi oficina"}
+  - {role: assistant, content: "Te muestro esta opción:\n\n1. Piso Simil Goma 2mm Alto Tránsito Gris X Rollo 15m2 Premium • PVC • Liso • Espesor 2mm • Rollo 15m²\n🔗 https://odranid.com.ar/producto/piso-simil-goma-2mm-alto-transito-gris-x-rollo-15m2-premium/\n\n¿Cuántos m² querés cubrir?"}
+message: "ese piso necesita pegamento?"
+asserts:
+  - mentions: ["pegamento"]
+  - not_mentions: ["no necesita pegamento", "no hace falta pegamento", "no requiere pegamento", "no lleva pegamento", "sin pegamento", "sin pegar"]

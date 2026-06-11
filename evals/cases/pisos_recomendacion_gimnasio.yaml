@@ -1,0 +1,9 @@
+# Modo recomendación: el cliente delega la decisión. Mostrar opciones YA, no pedir ancho.
+history:
+  - {role: user, content: "hola, necesito piso para un gimnasio en casa, unos 18 m2"}
+  - {role: assistant, content: "¡Buenísimo! ¿Qué espesor y ancho necesitás? ¿Preferís liso o con diseño?"}
+message: "ni idea, no sé de medidas, recomendame vos"
+asserts:
+  - tool_called: buscar_productos
+  - presents_product
+  - not_asks: ["ancho", "espesor"]

@@ -1,0 +1,8 @@
+# Incidente de producción (conv 811): el cliente pidió piso LISO y el bot mostró pisos
+# con diseño. Si pide liso, todo lo presentado debe ser liso; los diseños solo aparecen
+# si el cliente los pide (o si no hay lisos, aclarando que es alternativa).
+message: "busco piso liso de goma de 2mm por 1.40 de ancho, para cubrir 20 m2"
+asserts:
+  - tool_called: buscar_productos
+  - presents_product
+  - presented_only: {floor_kind: "liso"}

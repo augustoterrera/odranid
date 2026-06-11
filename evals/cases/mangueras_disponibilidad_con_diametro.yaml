@@ -1,0 +1,7 @@
+# Disponibilidad con diámetro: buscar PRIMERO con lo que dio (no interrogar antes de buscar),
+# confirmar que hay, y no volver a pedir el diámetro que ya dio.
+message: "hola tenés mangueras de riego de 3/4?"
+asserts:
+  - tool_called: buscar_productos
+  - mentions: ["tenemos"]
+  - not_asks: ["diametro", "diámetro"]

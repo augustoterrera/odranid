@@ -1,0 +1,22 @@
+# Mensaje real (mayúsculas y todo). Envío al interior: correo + asesor para cotizar,
+# nombrar la localidad, NO dar dirección/horario del local, no buscar catálogo.
+#
+# Regla 9 (resuelta en Fase 4): en operativos con pedido en curso el intake puede usar
+# intent operativo y conservar el contexto del producto en known; lo innegociable es
+# should_search=false y cero herramientas.
+#
+# Nota: la variante real del mensaje era "20 mts en un solo rollo... uds hacen envíos a
+# CHACO ?¿" — mezcla refinamiento de producto + envío y el modelo a veces busca y a veces
+# no (borde legítimo). Para CI usamos la versión puramente operativa, que es estable.
+# La variante mixta queda para los casos duros de la Fase 4.
+history:
+  - {role: user, content: "tenés mangueras de riego de 3/4?"}
+  - {role: assistant, content: "Sí, tenemos 🙌\n\n1. Manguera De Riego 3/4 Trenzada Reforzada X 15mts + Accesorio • Diámetro 19.1mm • 15 mts\n🔗 https://odranid.com.ar/producto/manguera-de-riego-3-4-trenzada-reforzada-x-15mts-accesorio/\n\n¿Cuál te interesa?"}
+message: "uds hacen envíos a CHACO ?¿"
+asserts:
+  - no_tool_calls
+  - should_search: false
+  - mentions: ["chaco"]
+  - mentions_any: ["correo", "interior"]
+  - mentions: ["wa.me/5491125539459"]
+  - not_mentions: ["suarez 2737", "8 a 16"]

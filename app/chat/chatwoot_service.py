@@ -193,6 +193,24 @@ def process_pending_conversation_messages(
                 "tool_call_count": len(agent_response.tool_calls),
             },
         )
+        # Si el cliente escribió MIENTRAS generábamos, esta respuesta ya quedó vieja
+        # (contestaría solo una parte de lo que dijo). Descartamos el turno y devolvemos
+        # nuestros mensajes a pending: la task que encoló el mensaje nuevo procesa todo
+        # junto y responde una sola vez, completo.
+        superseding = [m for m in store.pending_messages(conversation_id) if m.id not in set(message_ids)]
+        if superseding:
+            store.mark_messages_pending(message_ids)
+            store.update_jobs_for_conversation(conversation_id, "completed")
+            store.update_events_for_conversation(conversation_id, "completed")
+            logger.info(
+                "chatwoot_turn_superseded_by_new_messages",
+                extra={
+                    "conversation_id": conversation_id,
+                    "discarded_message_ids": message_ids,
+                    "new_message_ids": [m.id for m in superseding],
+                },
+            )
+            return None
         phase_started = time.monotonic()
         store.add_message(
             conversation_id=conversation_id,

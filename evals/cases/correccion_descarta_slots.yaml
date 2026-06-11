@@ -1,0 +1,8 @@
+# Corrección pura: limpiar el estado, no buscar, no resucitar atributos descartados.
+history:
+  - {role: user, content: "busco piso moneda 3mm para gimnasio"}
+  - {role: assistant, content: "Te muestro estas opciones:\n\n1. Piso De Goma/pvc Moneda 3mm Gris 1,20x15mts Oficina Gimnasio • Con diseño • Moneda • Espesor 3mm\n🔗 https://odranid.com.ar/producto/piso-de-goma-pvc-moneda-3mm-gris-120x15mts-oficina-gimnasio/\n\n¿Cuántos m² querés cubrir?"}
+message: "no, eso no es lo que busco"
+asserts:
+  - no_tool_calls
+  - intent_null

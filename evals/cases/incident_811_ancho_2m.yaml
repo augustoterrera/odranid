@@ -1,0 +1,15 @@
+# Incidente de dev (replay 811): con "2 mt de ancho" el bot respondió la contradicción
+# "no está disponible, solo tenemos 1, 1.2, 1.4, 1.5 y 2 m, pero 2 está fuera del rango".
+# El 2m figura en su propia lista (existe en símil madera, no en liso). Invariante: jamás
+# negar un valor que figura en el contexto; la disponibilidad real la decide la búsqueda.
+# Comportamiento válido: pedir el espesor que falta, o buscar y mostrar alternativas — lo
+# prohibido es la negación contradictoria sin buscar.
+history:
+  - {role: user, content: "busco piso liso para proteger el piso de una casa que muestro a compradores"}
+  - {role: assistant, content: "Para proteger y que se limpie fácil lo ideal es un piso liso. ¿Cuántos m² necesitás cubrir?"}
+  - {role: user, content: "necesito algo que no se pegue al piso, lo tengo que poder sacar después sin marcar nada"}
+  - {role: assistant, content: "Los pisos de goma pueden ir apoyados sin pegar, así los retirás sin marcar. ¿Cuántos m² necesitás cubrir?"}
+message: "2 mt de ancho por 30 de largo.\n60 metros cuadredos"
+asserts:
+  - not_mentions: ["fuera del rango", "no está disponible", "no esta disponible", "no tenemos ancho"]
+  - mentions_any: ["espesor", "mm"]

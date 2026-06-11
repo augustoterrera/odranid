@@ -82,7 +82,15 @@ class CatalogSearch:
             facet_boost = len(matched) * 0.05
             stock_boost = 0.08 if product.in_stock else 0
             score = lexical + facet_boost + stock_boost
-            candidates.append(SearchHit(product=product, score=score, matched_filters=matched, relaxed_filters=relaxed))
+            candidates.append(
+                SearchHit(
+                    product=product,
+                    score=score,
+                    matched_filters=matched,
+                    relaxed_filters=relaxed,
+                    is_alternative=bool(relaxed),
+                )
+            )
 
         candidates.sort(key=lambda hit: hit.score, reverse=True)
         return post_filter_specific_terms(query, candidates, limit)

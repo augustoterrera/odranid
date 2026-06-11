@@ -636,5 +636,206 @@ class ForcePresentRetryModel(TestModel):
         return super().gen_tool_args(tool_def)
 
 
+class IntakeInvariantTests(unittest.TestCase):
+    def test_should_search_is_true_when_tool_was_called(self) -> None:
+        """El LLM a veces busca y devuelve should_search=false; el código lo corrige."""
+
+        def fake_search(request: SearchRequest) -> SearchResponse:
+            return SearchResponse(
+                query=request.query,
+                total_catalog_size=1,
+                hits=[
+                    SearchHit(
+                        product=ProductDocument(
+                            id=1,
+                            title="Bota De Goma Calfor",
+                            link="https://odranid.com.ar/producto/bota-de-goma-calfor/",
+                            rubro="calzado",
+                            content="Bota de goma",
+                        ),
+                        score=0.9,
+                    )
+                ],
+            )
+
+        response = run_pydantic_agent(
+            request=AgentRequest(message="venden botas de goma?", limit=5),
+            search=fake_search,
+            api_key="sk-test",
+            catalog_context="CATALOGO",
+            pydantic_model=ControlledTestModel(
+                tool_args={"query_semantica": "botas de goma", "rubro": "calzado"},
+                output_args={
+                    "intake": {
+                        "intent": "calzado",
+                        "known": {"rubro": "calzado"},
+                        "missing": [],
+                        # Inconsistencia del LLM: buscó pero dice que no.
+                        "should_search": False,
+                        "next_question": None,
+                        "confidence": 0.9,
+                    },
+                    "answer": "Te muestro estas opciones: Bota De Goma Calfor",
+                },
+            ),
+        )
+
+        self.assertEqual(response.tool_calls[0].name, "buscar_productos")
+        self.assertTrue(response.intake.should_search)
+
+
+class InferFloorKindTests(unittest.TestCase):
+    def test_liso_infers_liso(self) -> None:
+        from app.search.search_common import infer_floor_kind
+
+        self.assertEqual(infer_floor_kind("busco piso liso de goma 2mm"), "liso")
+        self.assertEqual(infer_floor_kind("pisos lisos para oficina"), "liso")
+
+    def test_design_terms_infer_diseno(self) -> None:
+        from app.search.search_common import infer_floor_kind
+
+        self.assertEqual(infer_floor_kind("piso moneda para rampa"), "diseno")
+        self.assertEqual(infer_floor_kind("algo antideslizante para la entrada"), "diseno")
+
+    def test_ambiguous_or_indifferent_infers_nothing(self) -> None:
+        from app.search.search_common import infer_floor_kind
+
+        self.assertIsNone(infer_floor_kind("liso o con diseño, lo que tengas"))
+        self.assertIsNone(infer_floor_kind("el diseño no importa"))
+        self.assertIsNone(infer_floor_kind("cualquier diseño me sirve"))
+        self.assertIsNone(infer_floor_kind("piso de goma 2mm"))
+
+
+class CoverageSortTests(unittest.TestCase):
+    def _hit(self, title: str, *, rolls: int | None, source: str = "rollo", is_alternative: bool = False) -> SearchHit:
+        return SearchHit(
+            product=ProductDocument(id=hash(title) % 1000, title=title, rubro="pisos", content=title),
+            score=0.9,
+            is_alternative=is_alternative,
+            coverage=CoverageCalculation(
+                requested_m2=60,
+                sale_unit="rollo",
+                coverage_source=source,
+                rolls_needed=rolls,
+                message="x",
+            ),
+        )
+
+    def test_fewer_rolls_first_for_large_surfaces(self) -> None:
+        from app.agents.pydantic_agent import sort_hits_by_coverage
+
+        response = SearchResponse(
+            query="cubrir 60 m2",
+            total_catalog_size=3,
+            requested_m2=60,
+            hits=[
+                self._hit("Rollo chico 6m2", rolls=10),
+                self._hit("Rollo grande 15m2", rolls=4),
+                self._hit("Rollo mediano 12m2", rolls=5),
+            ],
+        )
+
+        sort_hits_by_coverage(response)
+
+        self.assertEqual(
+            [hit.product.title for hit in response.hits],
+            ["Rollo grande 15m2", "Rollo mediano 12m2", "Rollo chico 6m2"],
+        )
+
+    def test_corte_a_medida_counts_as_single_piece_and_exact_beats_alternative(self) -> None:
+        from app.agents.pydantic_agent import sort_hits_by_coverage
+
+        response = SearchResponse(
+            query="cubrir 60 m2",
+            total_catalog_size=3,
+            requested_m2=60,
+            hits=[
+                self._hit("Alternativa 1 rollo", rolls=1, is_alternative=True),
+                self._hit("Rollo grande", rolls=4),
+                self._hit("Corte a medida", rolls=None, source="corte_a_medida"),
+            ],
+        )
+
+        sort_hits_by_coverage(response)
+
+        self.assertEqual(
+            [hit.product.title for hit in response.hits],
+            ["Corte a medida", "Rollo grande", "Alternativa 1 rollo"],
+        )
+
+
+class GuardRenumberTests(unittest.TestCase):
+    def _response_with_products(self) -> SearchResponse:
+        def product(idx: int, title: str, slug: str) -> SearchHit:
+            return SearchHit(
+                product=ProductDocument(
+                    id=idx,
+                    title=title,
+                    link=f"https://odranid.com.ar/producto/{slug}/",
+                    rubro="pisos",
+                    content=title,
+                ),
+                score=0.9,
+            )
+
+        return SearchResponse(
+            query="pisos",
+            total_catalog_size=3,
+            hits=[product(1, "Piso Moneda 3mm", "piso-moneda-3mm"), product(2, "Piso Liso 2mm", "piso-liso-2mm")],
+        )
+
+    def test_guard_renumbers_after_discarding_hallucinated_product(self) -> None:
+        from app.agents.pydantic_agent import guard_agent_answer
+
+        answer = "\n".join(
+            [
+                "Te muestro estas opciones:",
+                "1. Piso Moneda 3mm • Espesor 3mm",
+                "🔗 https://odranid.com.ar/producto/piso-moneda-3mm/",
+                "2. Piso Inventado Premium • Espesor 9mm",
+                "3. Piso Liso 2mm • Espesor 2mm",
+                "🔗 https://odranid.com.ar/producto/piso-liso-2mm/",
+                "¿Cuál te interesa?",
+            ]
+        )
+
+        guarded = guard_agent_answer(answer, [self._response_with_products()])
+
+        self.assertNotIn("Inventado", guarded)
+        self.assertIn("1. Piso Moneda 3mm", guarded)
+        self.assertIn("2. Piso Liso 2mm", guarded)
+        self.assertNotIn("3.", guarded)
+
+
+class LinkedProductSlugTests(unittest.TestCase):
+    def test_slugs_from_current_message_have_priority_over_history(self) -> None:
+        from app.agents.pydantic_agent import linked_product_slugs
+        from app.core.models import AgentMessage
+
+        request = AgentRequest(
+            message="me interesa https://odranid.com.ar/producto/piso-liso-2mm/",
+            history=[
+                AgentMessage(role="user", content="mira https://odranid.com.ar/producto/piso-moneda-3mm/"),
+                AgentMessage(role="assistant", content="¡Buenísimo!"),
+            ],
+        )
+
+        self.assertEqual(linked_product_slugs(request), ["piso-liso-2mm", "piso-moneda-3mm"])
+
+    def test_follow_up_without_link_recovers_slug_from_history(self) -> None:
+        from app.agents.pydantic_agent import linked_product_slugs
+        from app.core.models import AgentMessage
+
+        request = AgentRequest(
+            message="y ese cuánto rinde?",
+            history=[
+                AgentMessage(role="user", content="vengo de https://odranid.com.ar/producto/piso-moneda-3mm/"),
+                AgentMessage(role="assistant", content="Por el piso moneda..."),
+            ],
+        )
+
+        self.assertEqual(linked_product_slugs(request), ["piso-moneda-3mm"])
+
+
 if __name__ == "__main__":
     unittest.main()

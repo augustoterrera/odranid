@@ -1,0 +1,7 @@
+# Mensaje real. Horarios/retiro: dirección + horario + cómo llegar, textual, sin búsqueda.
+# Operativo (regla 9): puede traer intent operativo; lo innegociable es no buscar.
+message: "Buen día, que horarios tienen para retirar?"
+asserts:
+  - no_tool_calls
+  - should_search: false
+  - mentions: ["suarez 2737", "8 a 16", "maps.app.goo.gl/zMfBWeQwwPKFGBa89"]

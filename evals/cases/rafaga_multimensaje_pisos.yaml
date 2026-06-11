@@ -1,0 +1,11 @@
+# Ráfaga de mensajes cortos unidos con \n (como los entrega el debounce del webhook):
+# leer de arriba hacia abajo y armar el pedido completo, buscar sin re-preguntar.
+history:
+  - {role: user, content: "hola busco piso de goma"}
+  - {role: assistant, content: "¡Hola! ¿Liso o con diseño? ¿Qué espesor y ancho necesitás, y cuántos m² querés cubrir?"}
+message: "liso\n2mm\n1.40 de ancho\nson como 20 m2"
+asserts:
+  - tool_called: buscar_productos
+  - should_search: true
+  - presents_product
+  - not_asks: ["espesor", "ancho"]

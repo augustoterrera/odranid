@@ -1,0 +1,49 @@
+# Evals conversacionales: corren el agente REAL (gastan tokens OpenAI), por eso solo
+# se disparan cuando el cambio toca el comportamiento del agente, o a mano.
+# Requiere el secret OPENAI_API_KEY en Settings > Secrets and variables > Actions.
+name: evals
+
+on:
+  pull_request:
+    paths:
+      - "app/agents/**"
+      - "app/chat/**"
+      - "app/search/**"
+      - "app/catalog/**"
+      - "evals/**"
+      - "pyproject.toml"
+  push:
+    branches: [main]
+    paths:
+      - "app/agents/**"
+      - "app/chat/**"
+      - "app/search/**"
+      - "app/catalog/**"
+      - "evals/**"
+  workflow_dispatch:
+
+concurrency:
+  group: evals-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  conversational:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: uv sync --frozen
+      - name: Run conversational evals
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: uv run pytest evals -q 2>&1 | tee eval_output.txt
+      - name: Summary
+        if: always()
+        run: |
+          echo "## Evals conversacionales" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          tail -30 eval_output.txt >> "$GITHUB_STEP_SUMMARY" || true
+          echo '```' >> "$GITHUB_STEP_SUMMARY"

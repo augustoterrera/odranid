@@ -17,3 +17,6 @@ __pycache__/
 .codex/
 .claude/
 .uv-cache
+# Manual local para agentes de IA: no se versiona.
+AGENTS.md
+CLAUDE.md

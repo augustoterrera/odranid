@@ -19,6 +19,44 @@ def enrich_search_response(response: SearchResponse) -> SearchResponse:
     return response
 
 
+# Par de medidas "A x B" con multiplicador opcional ("2 de 2,5 x 2,5"). Tolera unidades
+# ("5 mts x 2,40"), separadores sucios ("x. 2, 40") y decimales con espacios ("2, 40").
+_ROOM_PAIR_RE = re.compile(
+    r"(?:\b(\d{1,2})\s*de\s*)?"
+    r"\b(\d{1,2}(?:\s*[.,]\s*\d{1,2})?)\s*(?:m|mt|mts|metros?)?\s*"
+    r"(?:x|\*)\s*\.?\s*"
+    r"(\d{1,2}(?:\s*[.,]\s*\d{1,2})?)\s*(?!mm)(?:m|mt|mts|metros?)?\b"
+)
+_ROOM_SIDE_MIN_M = 0.3
+_ROOM_SIDE_MAX_M = 60.0
+
+
+def extract_rooms_total_m2(text: str) -> float | None:
+    """Suma de superficies cuando el cliente lista medidas de VARIOS ambientes.
+
+    "5 x 2 / 1 x 2 / 2 de 2,5 x 2,5" son ambientes a cubrir que se suman como m²; el bug
+    de producción era tomar el primer número como superficie total o un lado como ancho.
+    Solo actúa con DOS o más pares (un "A x B" suelto es ambiguo con ancho x largo de
+    producto y ahí no se infiere nada: decide el flujo normal).
+    """
+    normalized = norm_text(text)
+    total = 0.0
+    pairs = 0
+    for match in _ROOM_PAIR_RE.finditer(normalized):
+        count = int(match.group(1)) if match.group(1) else 1
+        side_a = norm_num(re.sub(r"\s", "", match.group(2)))
+        side_b = norm_num(re.sub(r"\s", "", match.group(3)))
+        if side_a is None or side_b is None:
+            continue
+        if not (_ROOM_SIDE_MIN_M <= side_a <= _ROOM_SIDE_MAX_M and _ROOM_SIDE_MIN_M <= side_b <= _ROOM_SIDE_MAX_M):
+            continue
+        total += count * side_a * side_b
+        pairs += 1
+    if pairs < 2 or total <= 0:
+        return None
+    return round(total, 2)
+
+
 def extract_requested_m2(query: str) -> float | None:
     text = norm_text(query)
     patterns = [

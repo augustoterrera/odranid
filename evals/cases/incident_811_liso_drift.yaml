@@ -1,0 +1,16 @@
+# Incidente de producción (conv 811): la conversación venía de piso LISO (el bot mismo lo
+# recomendó), hubo un desvío por "que no se pegue", y al retomar con una respuesta corta
+# ("1 m") el bot DERIVÓ a pisos con diseño (semilla melón) que el cliente nunca pidió, en
+# rollos de 6 m² para 60 m². Una respuesta corta de slot no borra el tipo ya elegido:
+# lo presentado sigue siendo liso, en presentaciones acordes a la superficie.
+history:
+  - {role: user, content: "busco piso liso de 2mm para proteger el piso de una casa que muestro a compradores"}
+  - {role: assistant, content: "Te muestro estas opciones de piso liso 2mm:\n\n1. Piso Simil Goma 2mm Alto Tránsito Gris X Rollo 15m2 Premiun Gris • PVC • Liso • Espesor 2mm • Rollo 15m x 1m (15 m²)\n🔗 https://odranid.com.ar/producto/piso-simil-goma-2mm-alto-transito-gris-x-rollo-15m2-premiun-gris/\n\n¿Cuántos m² querés cubrir?"}
+  - {role: user, content: "son unos 60 m2 en total, y necesito algo que no se pegue al piso, lo tengo que poder sacar después sin marcar nada"}
+  - {role: assistant, content: "Los pisos de goma pueden ir apoyados sin pegar, así los retirás sin marcar la superficie. ¿Qué ancho preferís, 1 m o 1.2 m?"}
+message: "1 m"
+asserts:
+  - tool_called: buscar_productos
+  - presents_product
+  - presented_only: {floor_kind: "liso"}
+  - presented_max_rolls: 6

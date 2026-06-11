@@ -1,0 +1,7 @@
+# Mensaje real de cliente. Símil madera solo existe en 1.2mm en el catálogo congelado:
+# debe buscar, ser honesto (no hay 2mm) y decir qué hay, sin re-preguntar el espesor.
+message: "Que ancho tenés disponible en símil madera de 2 mm de espesor"
+asserts:
+  - tool_called: buscar_productos
+  - mentions_any: ["1.2", "1,2"]
+  - not_asks: ["espesor"]

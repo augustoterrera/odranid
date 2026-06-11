@@ -1,0 +1,6 @@
+# Saludo pelado: menú institucional, sin búsqueda ni intake.
+message: "hola"
+asserts:
+  - no_tool_calls
+  - intent_null
+  - mentions: ["pisos", "mangueras"]

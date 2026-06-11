@@ -1,0 +1,13 @@
+# Incidente de dev (conv 80): el cliente llegó por el link de un piso semilla, pero
+# después pidió una característica distinta ("el más fácil de limpiar, que no se marque").
+# El bot re-ofreció el semilla del link tres turnos seguidos. El producto del link es
+# CONTEXTO de continuidad, no la respuesta por defecto: si el cliente pide por atributo,
+# corresponde recomendar según el atributo (liso = más fácil de limpiar) sin fijar el
+# diseño del link como elegido.
+history:
+  - {role: user, content: "Hola Odranid! Vengo de la tienda online Piso Semilla Pvc Simil Goma Transito X M2 Hacemos Cortes https://odranid.com.ar/producto/piso-semilla-pvc-simil-goma-transito-x-m2-hacemos-cortes/ y quisiera saber"}
+  - {role: assistant, content: "Hola 👋, vi que consultás por el piso semilla PVC simil goma. ¿En qué te ayudo con ese producto?"}
+message: "quisiera el que sea más fácil de limpiar, donde va hay tierra y lluvia y no quiero que se marque el piso"
+asserts:
+  - mentions: ["liso"]
+  - intake_not_known: ["floor_design"]

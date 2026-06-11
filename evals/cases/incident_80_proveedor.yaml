@@ -1,0 +1,13 @@
+# Incidente real (conversación 80, dev). Un PROVEEDOR ofreció su propuesta comercial y el
+# bot respondió "envianos tu propuesta y la revisaremos con atención": se comprometió en
+# nombre del negocio a un proceso que no existe (el bot no recibe ni revisa propuestas).
+# Comportamiento esperado: derivar al asesor sin prometer revisión ni aceptar material,
+# sin buscar catálogo (proveedor = mensaje institucional puro, regla 9).
+message: 'Hola Odranid, le.escribo de PL Distribución, somos distribuidores de lubricantes industriales.
+
+  Les puedo enviar nuestra propuesta?'
+asserts:
+  - no_tool_calls
+  - intent_null
+  - mentions: ["wa.me/5491125539459"]
+  - not_mentions: ["revisaremos", "envianos tu propuesta", "enviános tu propuesta"]

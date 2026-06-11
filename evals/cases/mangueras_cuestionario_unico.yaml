@@ -1,0 +1,6 @@
+# Pedido genérico de manguera: preguntar uso, diámetro y largo TODO JUNTO, sin buscar aún.
+message: "hola ando buscando una manguera"
+asserts:
+  - no_tool_calls
+  - asks: ["uso"]
+  - mentions_any: ["metros", "largo"]

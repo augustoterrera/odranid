@@ -14,10 +14,11 @@ from pydantic_ai.models import Model
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
-from .catalog_helpers import AgentError, build_system_prompt, canonical_product_link, clamp_int, compact_search_response, format_number
-from ..catalog.coverage import calculate_coverage, extract_requested_m2
+from .catalog_helpers import AgentError, canonical_product_link, clamp_int, compact_search_response, format_number
+from ..catalog.coverage import calculate_coverage, extract_requested_m2, extract_rooms_total_m2
 from ..catalog.footwear import extract_requested_talle
 from ..catalog.product_links import extract_product_slugs
+from ..search.search_common import infer_floor_kind
 from ..core.models import (
     AgentMessage,
     AgentRequest,
@@ -70,6 +71,12 @@ link corrigen alguna medida del producto detectado, no mezcles ambas medidas: ac
 escribió el cliente.
 Ejemplo: si el link resuelto es "ancho 1.40m" pero después el cliente escribe "1.00x10 no PVC", respondé
 "veo que venís del producto de 1.40m y también mencionás 1m x 10m no PVC" antes de derivar/cotizar.
+El producto del link es CONTEXTO de continuidad, NO la respuesta por defecto. Si el cliente después pide
+por una característica o criterio ("el más fácil de limpiar", "uno liso", "algo más grueso", "el más
+resistente") o una recomendación, eso ANULA el anclaje al link: recomendá según el criterio usando la
+GUÍA DE MATERIALES y buscá opciones — está PROHIBIDO re-ofrecer el producto del link atribuyéndole esa
+cualidad (no digas que "es fácil de limpiar" o "no se marca" si eso no está en sus specs) y PROHIBIDO
+copiar su diseño/tipo a `known` como si el cliente lo hubiera elegido.
 
 Cuando busques productos, llamá `buscar_productos` con argumentos estructurados. No escondas filtros dentro
 de una query libre: emití rubro, tipo/floor_kind/floor_design, espesor_mm, ancho_m, material, color, tags,
@@ -195,6 +202,11 @@ debe ser `true`. Cuando falte información, `should_search=false`, completá `mi
 3. Anchos: valores en metros típicos: 1, 1.2, 1.4, 1.5, 2.
    En pisos, formatos como "1.00x10", "1 x 10" o "1,00 x 10" se interpretan como ancho x largo:
    `ancho_m=1.0` y largo 10 m. Ese ancho reemplaza cualquier ancho anterior del título/link.
+   EXCEPCIÓN — lista de ambientes: si el mensaje trae VARIAS medidas "A x B" (con o sin
+   anotaciones de m²), son ambientes a cubrir: se SUMAN como `requested_m2` y NINGUNO de esos
+   números es `ancho_m`. Tampoco es ancho un "A x B" suelto cuyo primer valor no sea un ancho
+   plausible del catálogo (mayor a 2 m): eso es una medida de ambiente; confirmá los m² en vez
+   de asumir.
 
 4. Vinílico: `category="pisos_vinilicos"` solo si el cliente pide "vinilico", "PVC" o "vinil"
    explícitamente como algo que quiere. El default es goma, sin `category`.
@@ -223,18 +235,20 @@ debe ser `true`. Cuando falte información, `should_search=false`, completá `mi
 
 8. Mascotas y razas: pitbull, rottweiler, dogo u ovejero implican `animal="perro"` y `size="grande"`.
 
-9. Mensajes operativos o institucionales: saludos, despedidas, agradecimientos, preguntas de precio,
-   envío, costo de envío, tiempos de envío, pago, factura, horarios, ubicación, retiro, visitar el local,
-   ver productos en persona, pedir un asesor/persona, frustración o mensajes de proveedores deben devolver
-   `intent=null`, `known={}`, `missing=[]`, `should_search=false`, `next_question=null`. Esto manda aunque
-   el mensaje nombre un producto o traiga link de producto, porque la intención actual es operativa y no
-   buscar catálogo. No uses intents como `consulta_envio`, `precio`, `pago` ni copies especificaciones del
-   producto a `known` en estos casos.
+9. Mensajes operativos e institucionales — lo innegociable: `should_search=false`, `missing=[]`,
+   `next_question=null` y NINGUNA llamada a herramientas, aunque el mensaje nombre un producto o
+   traiga un link (la intención actual es operativa, no buscar catálogo). Dos variantes:
+   - Institucionales puros (saludos, despedidas, agradecimientos, frustración, proveedores):
+     `intent=null`, `known={}`.
+   - Operativos sobre un pedido en curso (precio, envío, costo/tiempos de envío, pago, factura,
+     horarios, ubicación, retiro, visitar el local, pedir asesor): podés usar un intent operativo
+     (ej. `consulta_envio`) y conservar en `known` el contexto del producto que el cliente sigue
+     queriendo — eso mantiene la continuidad sin abrir catálogo.
 
 10. Disponibilidad: mensajes con "¿tienen...?", "¿tenés...?", "¿hay...?", "¿vendés...?" que preguntan
     si existe un producto, material o característica deben tener `should_search=true` y una intención
     buscable, aunque falten datos finos. Distinto: "stock" de un producto ya elegido o pedido antes
-    es operativo y debe ir como `intent=null`, sin búsqueda.
+    es operativo, sin búsqueda (regla 9).
 
 11. Antideslizante: si el cliente lo pide, agregá "antideslizante" a `tags` y establecé
     `floor_kind="diseno"` si no hay otro `floor_kind`.
@@ -242,7 +256,14 @@ debe ser `true`. Cuando falte información, `should_search=false`, completá `mi
 12. Diseño vs liso: "con diseño", "moneda", "semilla", "rayado" y "antideslizante" implican
     `floor_kind="diseno"`. "liso" implica `floor_kind="liso"`.
 
-13. Mangueras: "inter" o "int." significa "interno" / diámetro interno. Si el cliente dice "estas mangueras"
+13. Términos ambiguos o desconocidos: en `known` van solo atributos que el cliente dijo de forma
+    reconocible. Si usa una sigla o palabra que no matchea ningún diseño, tipo o material del
+    catálogo, NO la traduzcas a un atributo ni la des por entendida: dejá ese slot fuera de
+    `known`, no lo afirmes en la respuesta como algo que el cliente eligió, y seguí el
+    cuestionario normal (o preguntá qué quiso decir). Tampoco completes `floor_kind` o
+    `floor_design` "por intuición" a partir del uso o del lugar: eso lo elige el cliente.
+
+14. Mangueras: "inter" o "int." significa "interno" / diámetro interno. Si el cliente dice "estas mangueras"
     y adjunta o menciona una foto, tratá eso como referencia concreta; buscá antes de pedir uso/largo.
     En búsquedas de mangueras, conservá siempre la unidad del diámetro en `query_semantica`: escribí "80mm",
     "110mm", etc., no solo "80" o "110".
@@ -276,6 +297,11 @@ def run_pydantic_agent(
 
     output, deps = run_agent_enforcing_search(agent, request, search, deps)
 
+    # Invariante del intake garantizado en código: si el agente buscó, should_search=true
+    # (el LLM a veces busca y aun así devuelve false; el estado debe reflejar lo que pasó).
+    if deps.tool_calls and output.intake is not None:
+        output.intake.should_search = True
+
     safe_answer = guard_agent_answer(output.answer, deps.search_responses)
     safe_answer = ensure_pickup_today_details(safe_answer, request, deps.search_responses)
     if not safe_answer.strip():
@@ -300,7 +326,7 @@ def build_agent_deps(request: AgentRequest, search: SearchCallable) -> OdranidAg
 
 
 def preload_linked_products(deps: OdranidAgentDeps, request: AgentRequest) -> None:
-    for slug in extract_product_slugs(request.message):
+    for slug in linked_product_slugs(request):
         try:
             response = deps.search(
                 SearchRequest(
@@ -316,6 +342,23 @@ def preload_linked_products(deps: OdranidAgentDeps, request: AgentRequest) -> No
         if response.hits:
             deps.linked_product_responses.append(response)
             deps.search_responses.append(response)
+
+
+# Cota de lookups por turno: el mensaje actual manda; del historial solo se re-resuelven
+# los links más recientes para que un follow-up ("¿y ese cuánto rinde?") conserve el
+# producto real sin pagar una búsqueda por cada link viejo de la conversación.
+_MAX_LINKED_SLUGS = 3
+_LINKED_HISTORY_USER_MESSAGES = 6
+
+
+def linked_product_slugs(request: AgentRequest) -> list[str]:
+    slugs = list(extract_product_slugs(request.message))
+    recent_user_messages = [m.content for m in request.history if m.role == "user"][-_LINKED_HISTORY_USER_MESSAGES:]
+    for content in reversed(recent_user_messages):
+        for slug in extract_product_slugs(content):
+            if slug not in slugs:
+                slugs.append(slug)
+    return slugs[:_MAX_LINKED_SLUGS]
 
 
 def run_agent_enforcing_search(
@@ -463,10 +506,18 @@ def build_agent(model: Model, system_prompt: str) -> Agent[OdranidAgentDeps, Odr
         # Calzado: extraer el talle pedido del mensaje (determinístico) para descartar
         # productos cuyo rango de talles no lo incluya, sin depender del LLM.
         filters.talle = extract_requested_talle(ctx.deps.latest_message)
+        # Pisos: si el cliente pidió liso (o un diseño) y el LLM no emitió el filtro,
+        # inferirlo del texto para que "liso" nunca devuelva moneda/semilla.
+        if filters.floor_kind is None and filters.floor_design is None and rubro in (None, "pisos"):
+            filters.floor_kind = infer_floor_kind(" ".join(filter(None, [ctx.deps.latest_message, query_semantica])))
         # No confiar solo en que el LLM emita requested_m2: si el cliente mencionó m² a cubrir
         # (en este mensaje o en la query semántica), extraerlo de forma determinística para que
         # la cobertura SIEMPRE se calcule. Así no quedan respuestas sin "Necesitás X rollos".
-        effective_m2 = requested_m2
+        # Si el mensaje trae una LISTA de ambientes (varios "A x B"), la suma determinística
+        # manda incluso sobre el requested_m2 del LLM, que tiende a tomar el primer número.
+        effective_m2 = extract_rooms_total_m2(ctx.deps.latest_message)
+        if effective_m2 is None:
+            effective_m2 = requested_m2
         if effective_m2 is None:
             effective_m2 = extract_requested_m2(" ".join(filter(None, [ctx.deps.latest_message, query_semantica])))
 
@@ -475,6 +526,7 @@ def build_agent(model: Model, system_prompt: str) -> Agent[OdranidAgentDeps, Odr
         response = ctx.deps.search(search_request)
         if effective_m2 is not None:
             apply_requested_coverage(response, effective_m2)
+            sort_hits_by_coverage(response)
 
         arguments = {
             "query_semantica": query_semantica,
@@ -524,7 +576,18 @@ def build_openai_model(model_name: str, api_key: str) -> OpenAIChatModel:
 
 
 def build_pydantic_system_prompt(prompt_file: Path, catalog_context: str) -> str:
-    return "\n\n".join([build_system_prompt(prompt_file, catalog_context), PYDANTIC_AGENT_INSTRUCTIONS, INTAKE_EXTRACTION_RULES])
+    """Estático primero, dinámico al final: el contexto de catálogo cambia con el stock,
+    así que ponerlo último maximiza el prefijo estable que cachea OpenAI (menos latencia
+    y costo por turno). No cambiar el orden sin correr `make eval`."""
+    return "\n\n".join(
+        [
+            prompt_file.read_text(encoding="utf-8"),
+            PYDANTIC_AGENT_INSTRUCTIONS,
+            INTAKE_EXTRACTION_RULES,
+            "## CONTEXTO DINAMICO ACTUAL",
+            catalog_context,
+        ]
+    )
 
 
 def build_user_prompt(
@@ -655,6 +718,29 @@ def apply_requested_coverage(response: SearchResponse, requested_m2: float) -> N
     response.requested_m2 = requested_m2
 
 
+def sort_hits_by_coverage(response: SearchResponse) -> None:
+    """Con m² pedidos, priorizar lo que cubre con menos unidades (orden determinístico:
+    el prompt dice "menos rollos primero" pero el orden real lo definía la similitud,
+    y para 60 m² terminaba recomendando rollos de 6 m²). Exactos antes que alternativas;
+    corte a medida cuenta como una sola pieza."""
+    if response.requested_m2 is None:
+        return
+    response.hits.sort(key=_coverage_sort_key)
+
+
+def _coverage_sort_key(hit: SearchHit) -> tuple[bool, float]:
+    coverage = hit.coverage
+    if coverage is None:
+        units = float("inf")
+    elif coverage.coverage_source == "corte_a_medida":
+        units = 1.0
+    elif coverage.rolls_needed is not None:
+        units = float(coverage.rolls_needed)
+    else:
+        units = float("inf")
+    return (hit.is_alternative, units)
+
+
 def guard_agent_answer(answer: str, search_responses: list[SearchResponse]) -> str:
     if not search_responses:
         return answer.strip()
@@ -683,7 +769,23 @@ def guard_agent_answer(answer: str, search_responses: list[SearchResponse]) -> s
             },
         )
     lines = repair_orphan_product_links(lines, allowed["link_hits"], allowed["titles"])
+    if discarded_products:
+        lines = renumber_product_lines(lines)
     return compact_answer_lines(lines)
+
+
+def renumber_product_lines(lines: list[str]) -> list[str]:
+    """Tras descartar líneas, la lista numerada puede quedar con huecos (1., 3., 5.).
+    Renumera secuencialmente para que el cliente no note el recorte."""
+    renumbered: list[str] = []
+    counter = 0
+    for line in lines:
+        match = re.match(r"^(\s*)(\d+)([\.\)])(\s+)(.*)$", line)
+        if match:
+            counter += 1
+            line = f"{match.group(1)}{counter}{match.group(3)}{match.group(4)}{match.group(5)}"
+        renumbered.append(line)
+    return renumbered
 
 
 def ensure_pickup_today_details(answer: str, request: AgentRequest, search_responses: list[SearchResponse]) -> str:

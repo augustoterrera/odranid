@@ -248,6 +248,24 @@ class ChatwootProductionTests(unittest.TestCase):
         self.assertIn(previous_question, [message.content for message in seen_requests[0].history])
         self.assertFalse(any(message.content.startswith("Datos ya recopilados:") for message in seen_requests[0].history))
 
+    def test_new_message_during_generation_supersedes_the_turn(self) -> None:
+        store = ProcessingStore()
+        marked_pending: list[list[int]] = []
+        store.mark_messages_pending = lambda ids, error=None: marked_pending.append(ids)  # type: ignore[assignment]
+
+        def run_agent(request: AgentRequest) -> AgentResponse:
+            # El cliente escribe MIENTRAS se genera la respuesta.
+            store.pending.append(ChatMessage(3, 123, "12", "user", "ah y también necesito pegamento", {}))
+            return AgentResponse(answer="respuesta ya vieja")
+
+        outbox_id = process_pending_conversation_messages(store, 123, run_agent)  # type: ignore[arg-type]
+
+        self.assertIsNone(outbox_id)
+        self.assertEqual(store.assistant_messages, [])
+        self.assertEqual(store.outbox_ids, {})
+        self.assertEqual(marked_pending, [[1, 2]])
+        self.assertEqual(store.job_statuses[-1], "completed")
+
     def test_outbox_idempotency_key_prevents_duplicate_outbox_rows(self) -> None:
         store = ProcessingStore()
 

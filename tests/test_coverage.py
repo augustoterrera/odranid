@@ -2,8 +2,32 @@ from __future__ import annotations
 
 import unittest
 
-from app.catalog.coverage import calculate_coverage, extract_requested_m2
+from app.catalog.coverage import calculate_coverage, extract_requested_m2, extract_rooms_total_m2
 from app.core.models import ProductDocument, ProductSpecs
+
+
+class RoomsTotalM2Tests(unittest.TestCase):
+    def test_annotated_room_list_sums_pairs(self) -> None:
+        # Lista real de la conversación 811/80. Las anotaciones del cliente pueden estar
+        # mal ("2 de 2x2 (4 m2)" son 8): manda el cálculo de los pares.
+        message = "te paso los ambientes\n5 x 2 ( 10 m2 )\n1 x 2 ( 2 m2 )\n4 x 2 ( 8 m2 )\n2 de 2 x 2 ( 4 m2 )"
+        self.assertEqual(extract_rooms_total_m2(message), 28)
+
+    def test_messy_room_list_without_annotations(self) -> None:
+        # Primera lista real de Ramón: separadores sucios y decimales con espacios.
+        message = "serían dos ambientes 5 mts x. 2, 40\n1 x 2\ny 2 de 2,50 x 2,50"
+        self.assertEqual(extract_rooms_total_m2(message), 26.5)
+
+    def test_single_pair_is_ambiguous_and_returns_none(self) -> None:
+        # Un solo "A x B" puede ser ancho x largo de producto: no se infiere nada.
+        self.assertIsNone(extract_rooms_total_m2("5 x 2,4"))
+        self.assertIsNone(extract_rooms_total_m2("quiero 1.40 x 10"))
+
+    def test_ignores_pairs_with_absurd_sides(self) -> None:
+        self.assertIsNone(extract_rooms_total_m2("código 99 x 99\nmodelo 88 x 77"))
+
+    def test_no_pairs_returns_none(self) -> None:
+        self.assertIsNone(extract_rooms_total_m2("necesito cubrir 20 m2 con piso liso"))
 
 
 class CoverageTests(unittest.TestCase):
