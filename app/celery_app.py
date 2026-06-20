@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from celery import Celery
 from celery.schedules import crontab
+from celery.signals import task_failure
+
+import notifier
 
 from .core.config import settings
 
@@ -62,3 +65,15 @@ celery_app.conf.update(
         },
     },
 )
+
+
+@task_failure.connect
+def _alerta_telegram(sender=None, task_id=None, exception=None, args=None, kwargs=None, einfo=None, **extra):
+    """Avisa por Telegram cuando una tarea agota reintentos y falla definitivamente.
+    task_failure se dispara solo en el fallo FINAL (no por cada retry), así que no
+    genera spam. notifier nunca lanza, con lo cual no afecta el flujo del worker."""
+    notifier.notify_error(
+        f"task {getattr(sender, 'name', '?')} falló",
+        detalle=(einfo.traceback if einfo else str(exception)),
+        contexto={"task_id": task_id, "args": args, "kwargs": kwargs},
+    )

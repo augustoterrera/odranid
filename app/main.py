@@ -4,10 +4,14 @@ import hmac
 import json
 import logging
 import re
+import traceback
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import JSONResponse
+
+import notifier
 
 from .agents.catalog_helpers import AgentError
 from .catalog.catalog_context import CatalogContextCache, TTLStringCache
@@ -57,6 +61,20 @@ context_cache = CatalogContextCache(settings.context_cache_file)
 # (facetas, ~3s) en cada mensaje. Se invalida al recargar/sincronizar el catálogo.
 catalog_context_ttl = TTLStringCache(settings.catalog_context_ttl_seconds)
 chat_memory_store: ChatMemoryStore | None = None
+
+
+@app.exception_handler(Exception)
+async def _alerta_telegram(request: Request, exc: Exception) -> JSONResponse:
+    """Captura SOLO las excepciones no manejadas (500). Las HTTPException y los
+    errores de validación tienen handlers más específicos de FastAPI que toman
+    precedencia, así que esto no se dispara con 4xx esperados. notifier nunca
+    lanza, por lo que no rompe la respuesta de error al cliente."""
+    notifier.notify_error(
+        "excepción no manejada en la API",
+        detalle=traceback.format_exc(),
+        contexto={"method": request.method, "path": request.url.path},
+    )
+    return JSONResponse(status_code=500, content={"detail": "internal server error"})
 
 
 @app.on_event("startup")

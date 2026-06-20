@@ -45,6 +45,9 @@ services:
     env_file:
       - .env
     environment:
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+      ALERT_PROJECT: ${ALERT_PROJECT:-odranid}
       ODRANID_DATABASE_URL: ${ODRANID_DATABASE_URL:-postgresql://odranid:odranid@postgres:5432/odranid}
       ODRANID_CELERY_BROKER_URL: redis://dragonfly:6379/0
       ODRANID_CELERY_RESULT_BACKEND: redis://dragonfly:6379/1
@@ -128,6 +131,9 @@ services:
     env_file:
       - .env
     environment:
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+      ALERT_PROJECT: ${ALERT_PROJECT:-odranid}
       ODRANID_DATABASE_URL: ${ODRANID_DATABASE_URL:-postgresql://odranid:odranid@postgres:5432/odranid}
       ODRANID_CELERY_BROKER_URL: redis://dragonfly:6379/0
       ODRANID_CELERY_RESULT_BACKEND: redis://dragonfly:6379/1
@@ -148,6 +154,9 @@ services:
     env_file:
       - .env
     environment:
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+      ALERT_PROJECT: ${ALERT_PROJECT:-odranid}
       ODRANID_DATABASE_URL: ${ODRANID_DATABASE_URL:-postgresql://odranid:odranid@postgres:5432/odranid}
       ODRANID_CELERY_BROKER_URL: redis://dragonfly:6379/0
       ODRANID_CELERY_RESULT_BACKEND: redis://dragonfly:6379/1
@@ -167,6 +176,9 @@ services:
     env_file:
       - .env
     environment:
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+      ALERT_PROJECT: ${ALERT_PROJECT:-odranid}
       ODRANID_DATABASE_URL: ${ODRANID_DATABASE_URL:-postgresql://odranid:odranid@postgres:5432/odranid}
       ODRANID_CELERY_BROKER_URL: redis://dragonfly:6379/0
       ODRANID_CELERY_RESULT_BACKEND: redis://dragonfly:6379/1
@@ -187,6 +199,9 @@ services:
     env_file:
       - .env
     environment:
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+      ALERT_PROJECT: ${ALERT_PROJECT:-odranid}
       ODRANID_DATABASE_URL: ${ODRANID_DATABASE_URL:-postgresql://odranid:odranid@postgres:5432/odranid}
       ODRANID_CELERY_BROKER_URL: redis://dragonfly:6379/0
       ODRANID_CELERY_RESULT_BACKEND: redis://dragonfly:6379/1
@@ -204,6 +219,9 @@ services:
     env_file:
       - .env
     environment:
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+      ALERT_PROJECT: ${ALERT_PROJECT:-odranid}
       ODRANID_DATABASE_URL: ${ODRANID_DATABASE_URL:-postgresql://odranid:odranid@postgres:5432/odranid}
       ODRANID_CELERY_BROKER_URL: redis://dragonfly:6379/0
       ODRANID_CELERY_RESULT_BACKEND: redis://dragonfly:6379/1
