@@ -38,6 +38,13 @@ class Settings(BaseSettings):
     chatwoot_job_max_retries: int = 5
     chatwoot_outbox_max_retries: int = 5
     chatwoot_stale_processing_minutes: int = 15
+    # Red de seguridad: mensajes del cliente que quedaron en `pending` por un fallo
+    # transitorio (quota/5xx/red) y cuyo job murió `failed`. El barrido los re-encola
+    # por EDAD del mensaje (no por estado del job), así un corte que dura horas se
+    # recupera solo. min: dar margen al flujo normal antes de reintentar; max: dejar
+    # de reintentar pasado un punto (una respuesta automática muy tardía no sirve).
+    chatwoot_stranded_pending_min_seconds: int = 120
+    chatwoot_stranded_pending_max_seconds: int = 21600  # 6h
     # Retargeting: recordatorio único a clientes que dejaron de responder al
     # último mensaje del bot. Opt-in (fail-safe): apagado por defecto para no
     # mensajear clientes reales sin que se active explícitamente.

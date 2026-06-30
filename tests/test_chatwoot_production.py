@@ -297,6 +297,20 @@ class ChatwootProductionTests(unittest.TestCase):
         self.assertEqual(result["requeued"], 2)
         self.assertEqual(apply_async.call_count, 2)
 
+    def test_sweep_rescues_stranded_pending_and_dedups(self) -> None:
+        store = Mock()
+        store.due_job_conversation_ids.return_value = [123]
+        store.requeue_stale_jobs.return_value = []
+        # 123 ya está en due_job (job failed re-marcado) y 456 solo aparece por mensajes pending varados.
+        store.due_stranded_pending_conversation_ids.return_value = [123, 456]
+        with patch.object(chatwoot_tasks, "memory_store", return_value=store), patch.object(
+            chatwoot_tasks, "set_conversation_debounce"
+        ), patch.object(chatwoot_tasks.process_chatwoot_conversation, "apply_async") as apply_async:
+            result = chatwoot_tasks.requeue_stuck_conversation_jobs.run()
+
+        self.assertEqual(result["requeued"], 2)  # 123 deduplicado, no encolado dos veces
+        self.assertEqual(apply_async.call_count, 2)
+
     def test_outbox_sender_skips_already_sent_messages(self) -> None:
         store = Mock()
         store.get_outbox_message.return_value = ChatOutboxMessage(

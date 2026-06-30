@@ -621,6 +621,20 @@ class ChatMemoryStore:
                 ids = first_row(cur.fetchone()).get("ids") or []
                 return [int(value) for value in ids]
 
+    def due_stranded_pending_conversation_ids(
+        self, min_age_seconds: int, max_age_seconds: int, limit: int = 100
+    ) -> list[int]:
+        """Conversaciones con mensajes `pending` varados por un fallo cuyo job murió
+        `failed`. Rescate por edad del mensaje, no por estado del job."""
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "select public.due_stranded_pending_conversations(%s, %s, %s) as ids",
+                    (min_age_seconds, max_age_seconds, limit),
+                )
+                ids = first_row(cur.fetchone()).get("ids") or []
+                return [int(value) for value in ids]
+
     def cleanup_expired_conversation_locks(self) -> int:
         with self._connect() as conn:
             with conn.cursor() as cur:

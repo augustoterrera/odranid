@@ -312,7 +312,16 @@ def dispatch_pending_outbox_messages() -> dict[str, object]:
 @celery_app.task(name="app.tasks.chatwoot_tasks.requeue_stuck_conversation_jobs", queue="chatwoot_messages")
 def requeue_stuck_conversation_jobs() -> dict[str, object]:
     store = memory_store()
-    ids = [*store.due_job_conversation_ids(), *store.requeue_stale_jobs(settings.chatwoot_stale_processing_minutes)]
+    ids = dict.fromkeys(
+        [
+            *store.due_job_conversation_ids(),
+            *store.requeue_stale_jobs(settings.chatwoot_stale_processing_minutes),
+            *store.due_stranded_pending_conversation_ids(
+                settings.chatwoot_stranded_pending_min_seconds,
+                settings.chatwoot_stranded_pending_max_seconds,
+            ),
+        ]
+    )
     for conversation_id in ids:
         set_conversation_debounce(conversation_id)
         process_chatwoot_conversation.apply_async(
