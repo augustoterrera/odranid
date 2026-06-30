@@ -42,6 +42,7 @@ services:
 
   api:
     build: .
+    image: ghcr.io/augustoterrera/odranid:latest
     env_file:
       - .env
     environment:
@@ -128,6 +129,7 @@ services:
 
   worker_messages:
     build: .
+    image: ghcr.io/augustoterrera/odranid:latest
     env_file:
       - .env
     environment:
@@ -151,6 +153,7 @@ services:
 
   worker_outbound:
     build: .
+    image: ghcr.io/augustoterrera/odranid:latest
     env_file:
       - .env
     environment:
@@ -173,6 +176,7 @@ services:
   # Aislado de chatwoot_messages para que un sync pesado no demore las respuestas al cliente.
   worker_catalog:
     build: .
+    image: ghcr.io/augustoterrera/odranid:latest
     env_file:
       - .env
     environment:
@@ -196,6 +200,7 @@ services:
 
   beat:
     build: .
+    image: ghcr.io/augustoterrera/odranid:latest
     env_file:
       - .env
     environment:
@@ -215,6 +220,7 @@ services:
 
   flower:
     build: .
+    image: ghcr.io/augustoterrera/odranid:latest
     profiles: ["observability"]
     env_file:
       - .env

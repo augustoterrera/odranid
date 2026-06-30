@@ -1,0 +1,98 @@
+name: CI + Deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch: {}
+
+concurrency:
+  group: deploy-vps-odranid
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/augustoterrera/odranid
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Unit tests
+        run: uv run pytest -q
+
+      - name: Build image
+        run: |
+          n=0
+          until docker build -t "$IMAGE:$GITHUB_SHA" -t "$IMAGE:latest" .; do
+            n=$((n+1)); [ "$n" -ge 3 ] && { echo "build failed after $n tries"; exit 1; }
+            echo "Docker Hub hiccup; retry $n in 15s..."; sleep 15
+          done
+
+      - name: Smoke imports
+        run: docker run --rm "$IMAGE:$GITHUB_SHA" python -c "import app.main, app.celery_app, app.tasks.chatwoot_tasks, app.tasks.catalog_tasks; print('import OK')"
+
+      - name: Login to GHCR
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push to GHCR
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          docker push "$IMAGE:$GITHUB_SHA"
+          docker push "$IMAGE:latest"
+
+  deploy:
+    needs: checks
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          script_stop: true
+          script: |
+            set -e
+            cd /opt/apps/odranid
+            export COMPOSE_FILE=docker-compose.yml
+            IMAGE=ghcr.io/augustoterrera/odranid
+
+            PREV=$(git rev-parse HEAD)
+            git pull --ff-only
+            docker compose pull
+            docker compose up -d
+
+            ok=0
+            for i in $(seq 1 10); do
+              if docker compose exec -T api python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health',timeout=5).status==200 else 1)" 2>/dev/null; then
+                ok=1; break
+              fi
+              sleep 3
+            done
+
+            if [ "$ok" != "1" ]; then
+              echo "HEALTHCHECK FAILED -> rollback to $PREV"
+              git reset --hard "$PREV"
+              docker pull "$IMAGE:$PREV" && docker tag "$IMAGE:$PREV" "$IMAGE:latest" || true
+              docker compose up -d
+              exit 1
+            fi
+            echo "Deploy OK at $(git rev-parse --short HEAD)"
